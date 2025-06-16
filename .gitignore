@@ -8,3 +8,4 @@ data
 quizx.egg-info
 libquizx.egg-info
 .vscode
+benches/results/*

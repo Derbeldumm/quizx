@@ -787,7 +787,6 @@ pub trait GraphLike: Clone + Sized + Send + Sync + std::fmt::Debug {
                 g.add_edge_with_type(vert_map[&s], vert_map[&t], ety);
             }
         }
-
         g
     }
 

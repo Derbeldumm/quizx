@@ -1060,6 +1060,9 @@ impl<G: GraphLike> Decomposer<G> {
     }
 
     pub fn new(g: &G) -> Decomposer<G> {
+        if !g.inputs().is_empty() || !g.outputs().is_empty() {
+            panic!("Only decompose graphs without inputs or outputs")
+        }
         Decomposer {
             result: ComputationNode::Graph(g.clone()),
             done: vec![],
@@ -1160,10 +1163,14 @@ impl<G: GraphLike> Decomposer<G> {
         let components = g.component_vertices();
         if components.len() > 1 {
             // println!("Number of components {}", components.len());
+            // println!("Before: {}", g.to_dot());
             let mut subgraphs: Vec<G> = components
                 .into_iter()
                 .map(|component| g.subgraph_from_vertices(component.into_iter().collect()))
                 .collect();
+            // for subgraph in subgraphs.iter() {
+            //     println!("Subgraph: {}", subgraph.to_dot());
+            // }
             *subgraphs[0].scalar_mut() = *g.scalar();
             let terms_vec: Vec<ComputationNode<G>> = if parallel {
                 subgraphs
@@ -1236,6 +1243,7 @@ impl<G: GraphLike> Decomposer<G> {
                 self.nterms += 1;
                 if g.inputs().is_empty() && g.outputs().is_empty() && g.num_vertices() != 0 {
                     println!("{}", g.to_dot());
+                    println!("{:?}", g.vertex_vec());
                     panic!("WARNING: graph was not fully reduced");
                 }
                 if self.save {
@@ -2036,43 +2044,20 @@ mod tests {
     }
 
     #[test]
-    fn full_simp() {
-        let mut g = Graph::new();
-        let mut outs = vec![];
-        for _ in 0..9 {
-            let v = g.add_vertex_with_phase(VType::Z, Rational64::new(1, 4));
-            let w = g.add_vertex(VType::B);
-            outs.push(w);
-            g.add_edge(v, w);
-        }
-        g.set_outputs(outs);
-
-        let mut d = Decomposer::new(&g);
-        d.with_full_simp()
-            .with_save(true)
-            .decompose(&BssTOnlyDriver { random_t: false });
-        assert_eq!(d.done.len(), 7 * 2 * 2);
-    }
-
-    #[test]
     fn cat4() {
         let mut g = Graph::new();
 
-        let mut outputs = vec![];
         let z = g.add_vertex(VType::Z);
         for _ in 0..4 {
             let t = g.add_vertex_with_phase(VType::Z, Rational64::new(1, 4));
             g.add_edge_with_type(z, t, EType::H);
 
-            let out = g.add_vertex(VType::B);
+            let out = g.add_vertex(VType::X);
             g.add_edge(t, out);
-            outputs.push(out);
         }
-        g.set_outputs(outputs);
 
         let mut d = Decomposer::new(&g);
-        d.with_full_simp()
-            .with_save(true)
+        d.with_save(true)
             .decompose(&BssWithCatsDriver { random_t: false });
         assert_eq!(d.done.len(), 2);
     }
@@ -2081,21 +2066,17 @@ mod tests {
     fn cat6() {
         let mut g = Graph::new();
 
-        let mut outputs = vec![];
         let z = g.add_vertex(VType::Z);
         for _ in 0..6 {
             let t = g.add_vertex_with_phase(VType::Z, Rational64::new(1, 4));
             g.add_edge_with_type(z, t, EType::H);
 
-            let out = g.add_vertex(VType::B);
+            let out = g.add_vertex(VType::X);
             g.add_edge(t, out);
-            outputs.push(out);
         }
-        g.set_outputs(outputs);
 
-        let mut d = Decomposer::new(&g);
-        d.with_full_simp()
-            .with_save(true)
+        let mut d: Decomposer<Graph> = Decomposer::new(&g);
+        d.with_save(true)
             .decompose(&BssWithCatsDriver { random_t: false });
 
         assert_eq!(d.done.len(), 3);

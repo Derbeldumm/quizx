@@ -80,6 +80,7 @@ pub mod random_graph;
 pub mod detection_webs;
 pub mod scalar_traits;
 pub mod simplify;
+pub mod simulation_bencher;
 pub mod tensor;
 pub mod util;
 pub mod vec_graph;

@@ -1,5 +1,5 @@
 //! The QuiZX command line interface.
-
+use crate::simulation_bencher;
 use clap::{crate_version, Parser};
 
 pub mod opt;
@@ -14,6 +14,8 @@ pub enum Cli {
     Opt(opt::OptArgs),
     /// Run the circuit simulator.
     Sim(sim::SimArgs),
+    /// Run the benchmarks.
+    Bench,
 }
 
 /// Error type for the CLI.
@@ -35,6 +37,7 @@ impl Cli {
         match self {
             Cli::Opt(args) => args.run(),
             Cli::Sim(args) => args.run(),
+            Cli::Bench => simulation_bencher::bench(),
         }
     }
 }
