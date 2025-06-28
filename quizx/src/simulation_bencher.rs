@@ -4,9 +4,7 @@ use std::io::{BufWriter, Write};
 use std::time::Instant;
 
 use crate::cli::CliError;
-use crate::decompose::{
-    BssTOnlyDriver, BssWithCatsDriver, Decomposer, Driver, DynamicTDriver, SimpFunc,
-};
+use crate::decompose::{Decomposer, Driver, SherlockDriver, SimpFunc};
 use crate::generate;
 use crate::graph::{BasisElem, GraphLike};
 use crate::simplify;
@@ -19,7 +17,7 @@ use std::collections::HashMap;
 
 const SEED: u64 = 42;
 const MIN_TCOUNT: usize = 6;
-const MAX_TCOUNT: usize = 40;
+const MAX_TCOUNT: usize = 25;
 const SAMPLES_PER_TCOUNT: usize = 4;
 
 fn get_testset() -> Vec<VecGraph> {
@@ -304,27 +302,64 @@ fn create_svg_plot(
 fn benchmark_driver(testset: &[VecGraph]) {
     println!("Running Driver benchmarks...");
 
+    // bench_setup(
+    //     "BssTOnly",
+    //     32,
+    //     &BssTOnlyDriver { random_t: false },
+    //     SimpFunc::FullSimp,
+    //     testset,
+    // );
+    // bench_setup(
+    //     "BssWithCats",
+    //     MAX_TCOUNT,
+    //     &BssWithCatsDriver { random_t: false },
+    //     SimpFunc::FullSimp,
+    //     testset,
+    // );
+    // bench_setup(
+    //     "DynamicT-wihtStuff",
+    //     MAX_TCOUNT,
+    //     &DynamicTDriver {t_only: false},
+    //     SimpFunc::FullSimp,
+    //     testset,
+    // );
+    // bench_setup(
+    //     "DynamicT-t_only",
+    //     MAX_TCOUNT,
+    //     &DynamicTDriver {t_only: true},
+    //     SimpFunc::FullSimp,
+    //     testset,
+    // );
+    // bench_setup(
+    //     "Sherlock-1",
+    //     20,
+    //     &SherlockDriver {tries: vec![1,0,0]},
+    //     SimpFunc::FullSimp,
+    //     testset,
+    // );
+    // bench_setup(
+    //     "Sherlock-10",
+    //     20,
+    //     &SherlockDriver {tries: vec![10,0,0]},
+    //     SimpFunc::FullSimp,
+    //     testset,
+    // );
     bench_setup(
-        "BssTOnly",
-        32,
-        &BssTOnlyDriver { random_t: false },
+        "Sherlock-10",
+        20,
+        &SherlockDriver {
+            tries: vec![10, 0, 0],
+        },
         SimpFunc::FullSimp,
         testset,
     );
-    bench_setup(
-        "BssWithCats",
-        MAX_TCOUNT,
-        &BssWithCatsDriver { random_t: false },
-        SimpFunc::FullSimp,
-        testset,
-    );
-    bench_setup(
-        "DynamicT",
-        MAX_TCOUNT,
-        &DynamicTDriver,
-        SimpFunc::FullSimp,
-        testset,
-    );
+    // bench_setup(
+    //     "Sherlock-withStuff",
+    //     20,
+    //     &SherlockDriver {tries: vec![100,100,100]},
+    //     SimpFunc::FullSimp,
+    //     testset,
+    // );
 }
 
 // fn benchmark_simplifier(testset: &Vec<VecGraph>) {

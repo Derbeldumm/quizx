@@ -388,6 +388,10 @@ impl VecGraph {
         self.g.inputs().len()
     }
 
+    fn tcount(&self) -> usize {
+        self.g.tcount()
+    }
+
     fn num_outputs(&self) -> usize {
         self.g.outputs().len()
     }

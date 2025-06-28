@@ -15,6 +15,7 @@ use crate::vec_graph::VecGraph;
 
 use ::quizx::extract::ExtractError;
 use ::quizx::extract::ToCircuit;
+use ::quizx::graph::V;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
@@ -27,6 +28,7 @@ fn quizx(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(full_simp, m)?)?;
     m.add_function(wrap_pyfunction!(extract_circuit, m)?)?;
     m.add_function(wrap_pyfunction!(qasm, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_single_decomp, m)?)?;
     m.add_class::<VecGraph>()?;
     m.add_class::<Decomposer>()?;
     m.add_class::<SimpFunc>()?;
@@ -66,4 +68,12 @@ fn extract_circuit(py: Python<'_>, g: &mut VecGraph) -> PyResult<PyObject> {
         Ok(c) => to_pyzx_circuit(py, c),
         Err(ExtractError(s, _, _)) => Err(PyValueError::new_err(s)),
     }
+}
+
+#[pyfunction]
+fn apply_single_decomp(g: &mut VecGraph, verts: Vec<V>) -> Vec<VecGraph> {
+    ::quizx::decompose::apply_single_decomp(&g.g, &verts)
+        .into_iter()
+        .map(|g| VecGraph { g })
+        .collect()
 }

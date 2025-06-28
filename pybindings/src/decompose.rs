@@ -82,8 +82,18 @@ impl Decomposer {
         self.d.max_terms()
     }
 
-    #[pyo3(signature = (driver_type = "BssWithCats", random_t = false, sherlock_tries = Vec::new()))]
-    fn decompose(&mut self, driver_type: &str, random_t: bool, sherlock_tries: Vec<usize>) {
+    // fn get_observations(&self) -> Vec<(VecGraph, Decomp, f64)>{
+    //     self.d.get_observations()
+    // }
+
+    #[pyo3(signature = (driver_type = "BssWithCats", random_t = false, sherlock_tries = Vec::new(), dynamic_t_only = false))]
+    fn decompose(
+        &mut self,
+        driver_type: &str,
+        random_t: bool,
+        sherlock_tries: Vec<usize>,
+        dynamic_t_only: bool,
+    ) {
         match driver_type {
             "BssTOnly" => {
                 self.d
@@ -94,7 +104,9 @@ impl Decomposer {
                     .decompose(&quizx::decompose::BssWithCatsDriver { random_t });
             }
             "DynamicT" => {
-                self.d.decompose(&quizx::decompose::DynamicTDriver);
+                self.d.decompose(&quizx::decompose::DynamicTDriver {
+                    t_only: dynamic_t_only,
+                });
             }
             "Sherlock" => {
                 self.d.decompose(&quizx::decompose::SherlockDriver {
@@ -110,13 +122,14 @@ impl Decomposer {
         };
     }
 
-    #[pyo3(signature = (/, *, allow_threads=true, driver_type, random_t = false, sherlock_tries = Vec::new()))]
+    #[pyo3(signature = (/, *, allow_threads=true, driver_type, random_t = false, sherlock_tries = Vec::new(), dynamic_t_only = false))]
     fn decompose_parallel(
         &mut self,
         allow_threads: bool,
         driver_type: &str,
         random_t: bool,
         sherlock_tries: Vec<usize>,
+        dynamic_t_only: bool,
     ) {
         if allow_threads {
             // Release the GIL for potentially long-running parallel computation
@@ -134,7 +147,10 @@ impl Decomposer {
                                 });
                         }
                         "DynamicT" => {
-                            self.d.decompose_parallel(&quizx::decompose::DynamicTDriver);
+                            self.d
+                                .decompose_parallel(&quizx::decompose::DynamicTDriver {
+                                    t_only: dynamic_t_only,
+                                });
                         }
                         "Sherlock" => {
                             self.d
@@ -155,13 +171,14 @@ impl Decomposer {
         }
     }
 
-    #[pyo3(signature = (depth, driver_type, random_t = false, sherlock_tries = Vec::new()))]
+    #[pyo3(signature = (depth, driver_type, random_t = false, sherlock_tries = Vec::new(), dynamic_t_only = false))]
     fn decompose_until_depth(
         &mut self,
         depth: i64,
         driver_type: &str,
         random_t: bool,
         sherlock_tries: Vec<usize>,
+        dynamic_t_only: bool,
     ) {
         match driver_type {
             "BssTOnly" => {
@@ -175,8 +192,12 @@ impl Decomposer {
                 );
             }
             "DynamicT" => {
-                self.d
-                    .decompose_until_depth(depth, &quizx::decompose::DynamicTDriver);
+                self.d.decompose_until_depth(
+                    depth,
+                    &quizx::decompose::DynamicTDriver {
+                        t_only: dynamic_t_only,
+                    },
+                );
             }
             "Sherlock" => {
                 self.d.decompose_until_depth(

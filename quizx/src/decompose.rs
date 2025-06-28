@@ -117,6 +117,41 @@ pub fn cat_ts<G: GraphLike>(g: &G) -> Vec<V> {
     res
 }
 
+fn get_observations_recursive<G: GraphLike>(
+    node: &ComputationNode<G>,
+) -> (Vec<(G, Decomp, f64)>, usize) {
+    match node {
+        ComputationNode::Graph(_) => panic!("Computation was not finished!"),
+        ComputationNode::Prod(terms) => {
+            let mut all_obs: Vec<(G, Decomp, f64)> = vec![];
+            let mut sum = 0;
+            for term in terms {
+                let (mut obs, nterms) = get_observations_recursive(term);
+                all_obs.append(&mut obs);
+                sum += nterms;
+            }
+            (all_obs, sum)
+        }
+        ComputationNode::Sum(terms, g, decomp) => {
+            let mut all_obs: Vec<(G, Decomp, f64)> = vec![];
+            let mut sum = 0;
+            for term in terms {
+                let (mut obs, nterms) = get_observations_recursive(term);
+                all_obs.append(&mut obs);
+                sum += nterms;
+            }
+            all_obs.push((
+                g.clone(),
+                decomp.clone(),
+                (sum as f64).log2() / (g.tcount() as f64),
+            ));
+            (all_obs, sum)
+        }
+        ComputationNode::None => panic!("Not yet initialised!"),
+        ComputationNode::Scalar(_) => (vec![], 1),
+    }
+}
+
 pub fn approximate_alpha_with(
     r_values: Vec<f64>,
     // initial_alpha: f64,
@@ -204,7 +239,7 @@ pub enum SimpFunc {
 }
 use SimpFunc::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Decomp {
     CatDecomp(Vec<usize>),
     Magic5FromCat(Vec<usize>),
@@ -246,7 +281,9 @@ pub struct BssWithCatsDriver {
     pub random_t: bool,
 }
 #[derive(Debug, Clone, Display)]
-pub struct DynamicTDriver;
+pub struct DynamicTDriver {
+    pub t_only: bool,
+}
 
 #[derive(Debug, Clone)]
 pub struct SherlockDriver {
@@ -386,7 +423,7 @@ impl Driver for DynamicTDriver {
         let max_weight = weights.iter().max_by(|a, b| a.1.partial_cmp(b.1).unwrap());
         let (v_single, alpha_single) = match max_weight {
             Some((max_key, max_val)) => (vec![*max_key], 1.0 / *max_val),
-            None => (vec![0], 5f64),
+            None => (vec![0], 4f64),
         };
 
         //FIND BEST PAIR CUT
@@ -468,9 +505,9 @@ impl Driver for DynamicTDriver {
             (TPairDecomp(vs_pair), alpha_pair)
         };
 
-        if cat_alpha < heur_alpha {
+        if cat_alpha < heur_alpha && !self.t_only {
             CatDecomp(cat_nodes)
-        } else if heur_alpha < 0.396 {
+        } else if heur_alpha < 0.396 || self.t_only {
             // println!("Decomp: {:?}, Alpha: {}", heur_decomp, heur_alpha);
             heur_decomp
         } else if ts.len() >= 5 {
@@ -940,7 +977,7 @@ fn apply_sym_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> {
 }
 
 /// Replace a single T gate with its decomposition
-fn apply_single_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> {
+pub fn apply_single_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> {
     vec![replace_single0(g, verts), replace_single1(g, verts)]
 }
 
@@ -1018,7 +1055,7 @@ enum ComputationNode<G: GraphLike> {
     Graph(G),
     Scalar(Scalar4),
     Prod(Vec<ComputationNode<G>>),
-    Sum(Vec<ComputationNode<G>>),
+    Sum(Vec<ComputationNode<G>>, G, Decomp),
     None,
 }
 
@@ -1028,7 +1065,7 @@ fn calc_max_terms(node: &ComputationNode<impl GraphLike>) -> f64 {
         ComputationNode::Scalar(_) => 1f64,
         ComputationNode::Graph(g) => terms_for_tcount(g.tcount()),
         ComputationNode::Prod(terms) => terms.iter().map(|node| calc_max_terms(node)).sum(),
-        ComputationNode::Sum(terms) => terms.iter().map(|node| calc_max_terms(node)).sum(),
+        ComputationNode::Sum(terms, _, _) => terms.iter().map(|node| calc_max_terms(node)).sum(),
     }
 }
 
@@ -1075,7 +1112,7 @@ impl<G: GraphLike> Decomposer<G> {
             ComputationNode::None => panic!("Not yet initialised!"),
             ComputationNode::Graph(_) => panic!("Not yet computed!"),
             ComputationNode::Prod(_) => panic!("Not yet computed!"), //TODO,
-            ComputationNode::Sum(_) => panic!("Not yet computed!"),
+            ComputationNode::Sum(_, _, _) => panic!("Not yet computed!"),
         }
     }
 
@@ -1113,6 +1150,10 @@ impl<G: GraphLike> Decomposer<G> {
     pub fn decompose_until_depth(&mut self, depth: i64, driver: &impl Driver) -> &mut Self {
         self.result = self.decompose_node(self.result.clone(), driver, false, 0, depth, false);
         self
+    }
+
+    pub fn get_observations(&self) -> Vec<(G, Decomp, f64)> {
+        get_observations_recursive(&self.result).0
     }
 
     /// Decompose until there are no T gates left
@@ -1294,7 +1335,7 @@ impl<G: GraphLike> Decomposer<G> {
                         .sum(),
                 )
             } else {
-                ComputationNode::Sum(terms_vec)
+                ComputationNode::Sum(terms_vec, g, decomp)
             }
         }
     }
@@ -1314,7 +1355,7 @@ impl<G: GraphLike> Decomposer<G> {
         match node {
             ComputationNode::None => panic!("Not yet initialised"),
             ComputationNode::Scalar(_) => node,
-            ComputationNode::Sum(terms) => {
+            ComputationNode::Sum(terms, g, decomp) => {
                 let results: Vec<_> = terms
                     .into_iter()
                     .map(|term| {
@@ -1336,7 +1377,7 @@ impl<G: GraphLike> Decomposer<G> {
                             .sum(),
                     )
                 } else {
-                    ComputationNode::Sum(results)
+                    ComputationNode::Sum(results, g, decomp)
                 }
             }
             ComputationNode::Prod(terms) => {
@@ -1739,7 +1780,7 @@ mod tests {
                                 *simp,
                                 parallel,
                                 &g,
-                                &DynamicTDriver,
+                                &DynamicTDriver { t_only: false },
                                 expected_scalar,
                                 size,
                                 split,
@@ -2068,5 +2109,86 @@ mod tests {
             .decompose(&BssWithCatsDriver { random_t: false });
 
         assert_eq!(d.done.len(), 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "Computation was not finished!")]
+    fn test_get_observations_panics_if_not_decomposed() {
+        let g = create_t_graph(1);
+        let d = Decomposer::new(&g);
+        // This should panic because the decomposer has not been run,
+        // and the root node is still a `ComputationNode::Graph`.
+        d.get_observations();
+    }
+
+    #[test]
+    fn test_get_observations_single_decomp_step() {
+        // This test checks a simple case with a single decomposition step (BSS).
+        let g = create_t_graph(6);
+        let driver = BssTOnlyDriver { random_t: false };
+
+        let mut d = Decomposer::new(&g);
+        // Decompose without reducing the computation tree to a scalar
+        d.decompose_until_depth(-1, &driver);
+
+        let (observations, total_terms) = get_observations_recursive(&d.result);
+
+        // The BSS decomposition has 7 resulting terms.
+        assert_eq!(total_terms, 7);
+        // Since it's a single decomposition of the root graph, there is one observation.
+        assert_eq!(observations.len(), 1);
+
+        let (obs_g, obs_decomp, obs_val) = &observations[0];
+
+        // Check the graph in the observation is the original graph.
+        assert_eq!(obs_g.tcount(), g.tcount());
+
+        // Check the decomposition recorded is the one chosen by the driver.
+        assert!(matches!(obs_decomp, Decomp::TDecomp(_)));
+
+        // Check if the calculated value is correct.
+        // value = log2(number of resulting terms) / t_count of the graph
+        let expected_val = (7.0_f64).log2() / (g.tcount() as f64);
+        assert!(abs_diff_eq!(obs_val, &expected_val, epsilon = 1e-9));
+    }
+
+    #[test]
+    fn test_get_observations_total_terms_and_top_level_value() {
+        // This test checks a multi-level decomposition. It verifies that the total number
+        // of terms calculated by `get_observations_recursive` matches the `nterms` field
+        // from a standard decomposition. It also checks the correctness of the value
+        // for the top-level observation.
+        let g = create_graph(17);
+        let driver = BssWithCatsDriver { random_t: false };
+
+        // First, run a standard decomposition to get the final number of terms.
+        let mut d_reduce = Decomposer::new(&g);
+        d_reduce.with_full_simp().decompose(&driver);
+        let expected_total_terms = d_reduce.nterms;
+
+        // Now, run a decomposition that preserves the computation tree.
+        let mut d_obs = Decomposer::new(&g);
+        d_obs.with_full_simp().decompose_until_depth(-1, &driver);
+
+        let (observations, total_terms_from_obs) = get_observations_recursive(&d_obs.result);
+
+        // The number of terms from traversing the tree should match the final count.
+        assert_eq!(total_terms_from_obs, expected_total_terms);
+
+        // Find the observation corresponding to the original, top-level graph.
+        let top_level_obs = observations
+            .iter()
+            .find(|(graph, _, _)| graph.tcount() == g.tcount())
+            .expect("Top-level observation not found");
+
+        let (_, _, top_level_val) = top_level_obs;
+
+        // The value for the top-level graph should be based on the total number of terms.
+        let expected_top_level_val = (expected_total_terms as f64).log2() / (g.tcount() as f64);
+        assert!(abs_diff_eq!(
+            top_level_val,
+            &expected_top_level_val,
+            epsilon = 1e-9
+        ));
     }
 }
