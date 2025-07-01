@@ -4,7 +4,7 @@ use std::io::{BufWriter, Write};
 use std::time::Instant;
 
 use crate::cli::CliError;
-use crate::decompose::{Decomposer, Driver, SherlockDriver, SimpFunc};
+use crate::decompose::{Decomposer, Driver, PyModelDriver, SimpFunc};
 use crate::generate;
 use crate::graph::{BasisElem, GraphLike};
 use crate::simplify;
@@ -344,15 +344,15 @@ fn benchmark_driver(testset: &[VecGraph]) {
     //     SimpFunc::FullSimp,
     //     testset,
     // );
-    bench_setup(
-        "Sherlock-10",
-        20,
-        &SherlockDriver {
-            tries: vec![10, 0, 0],
-        },
-        SimpFunc::FullSimp,
-        testset,
-    );
+    // bench_setup(
+    //     "Sherlock-10",
+    //     20,
+    //     &SherlockDriver {
+    //         tries: vec![10, 0, 0],
+    //     },
+    //     SimpFunc::FullSimp,
+    //     testset,
+    // );
     // bench_setup(
     //     "Sherlock-withStuff",
     //     20,
@@ -360,6 +360,14 @@ fn benchmark_driver(testset: &[VecGraph]) {
     //     SimpFunc::FullSimp,
     //     testset,
     // );
+    bench_setup(
+        "PyModelDrvier",
+        20,
+        &PyModelDriver::new("./saved_models/cut_model.pkl")
+            .expect("Failed to create PyModelDriver"),
+        SimpFunc::FullSimp,
+        testset,
+    );
 }
 
 // fn benchmark_simplifier(testset: &Vec<VecGraph>) {

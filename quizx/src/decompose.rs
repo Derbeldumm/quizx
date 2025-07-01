@@ -34,6 +34,121 @@ use rand::{thread_rng, Rng};
 // use rand::rngs::StdRng;
 use rayon::prelude::*;
 
+use pyo3::prelude::*;
+use pyo3::types::{PyList, PyModule};
+
+mod py_graph_wrapper {
+    use std::collections::HashMap;
+
+    use crate::{graph::GraphLike, params::Parity, phase::Phase, vec_graph::Graph};
+    use num::{One, Rational64, Zero};
+    use pyo3::{prelude::*, types::PyList};
+
+    type V = usize;
+    type E = (V, V);
+
+    pub fn phase_and_vars_to_py(py: Python<'_>, phase: Phase, vars: Parity) -> PyResult<PyObject> {
+        let p = if vars.is_empty() {
+            phase.to_rational().into_pyobject(py)?
+        } else {
+            let m = PyModule::import(py, "pyzx.symbolic")?;
+            let poly = m.getattr("Poly")?;
+            let term = m.getattr("Term")?;
+            let var = m.getattr("Var")?;
+            let mut ts = vec![];
+
+            if !phase.is_zero() {
+                // add a constant term for the phase if it != 0
+                ts.push((phase.to_rational(), term.call1((PyList::empty(py),))?));
+            }
+
+            for v in vars.iter() {
+                // add a linear term to the Poly for each var
+                let py_v = (var.call1((format!("b{v}"), true))?, 1);
+                ts.push((Rational64::one(), term.call1((PyList::new(py, [py_v])?,))?));
+            }
+
+            poly.call1((ts,))?
+        };
+
+        Ok(p.unbind())
+    }
+
+    #[pyclass(name = "VecGraph")]
+    #[derive(Clone)]
+    pub struct PyVecGraph {
+        pub g: Graph,
+    }
+
+    impl Default for PyVecGraph {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    #[pymethods]
+    impl PyVecGraph {
+        #[new]
+        pub fn new() -> PyVecGraph {
+            PyVecGraph { g: Graph::new() }
+        }
+
+        fn vertices(&self) -> Vec<V> {
+            Vec::from_iter(self.g.vertices())
+        }
+
+        fn phases(&self, py: Python<'_>) -> PyResult<HashMap<V, PyObject>> {
+            let mut m = HashMap::default();
+            for v in self.g.vertices() {
+                m.insert(v, self.phase(py, v)?);
+            }
+            Ok(m)
+        }
+
+        fn neighbors(&self, vertex: V) -> Vec<V> {
+            Vec::from_iter(self.g.neighbors(vertex))
+        }
+
+        fn phase(&self, py: Python<'_>, v: usize) -> PyResult<PyObject> {
+            let (phase, vars) = self.g.phase_and_vars(v);
+            phase_and_vars_to_py(py, phase, vars)
+        }
+
+        fn edge(&self, s: V, t: V) -> E {
+            if s < t {
+                (s, t)
+            } else {
+                (t, s)
+            }
+        }
+
+        #[pyo3(signature = (s=None, t=None))]
+        fn edges(&self, s: Option<V>, t: Option<V>) -> Vec<E> {
+            match (s, t) {
+                (Some(s), Some(t)) => {
+                    if self.g.connected(s, t) {
+                        vec![self.edge(s, t)]
+                    } else {
+                        vec![]
+                    }
+                }
+                (Some(s), None) => self.incident_edges(s),
+                _ => Vec::from_iter(self.g.edges().map(|(s, t, _)| (s, t))),
+            }
+        }
+
+        fn incident_edges(&self, vertex: V) -> Vec<E> {
+            Vec::from_iter(self.g.neighbors(vertex).map(|w| {
+                if vertex < w {
+                    (vertex, w)
+                } else {
+                    (w, vertex)
+                }
+            }))
+        }
+    }
+}
+
 /// Gives upper bound for number of terms needed for BSS decomposition
 ///
 /// Note this number can be very large. We use a float here to avoid overflows.
@@ -307,6 +422,107 @@ impl Driver for BssTOnlyDriver {
             first_ts(g)
         };
         TDecomp(ts)
+    }
+}
+
+#[derive(Debug, Display)]
+pub struct PyModelDriver {
+    // This holds the Python model object.
+    model: PyObject,
+}
+
+impl PyModelDriver {
+    /// Creates a new driver by loading a PyTorch model from the specified path.
+    pub fn new(model_path: &str) -> PyResult<Self> {
+        println!("{}", model_path);
+        // Get the Python interpreter and GIL.
+        Python::with_gil(|py| {
+            // Add the current directory to Python's path to find our helper module.
+            let sys = py.import("sys")?;
+            let path_obj = sys.getattr("path").expect("Error with path");
+            let path: &Bound<PyList> = path_obj.downcast()?;
+            path.insert(0, ".")?;
+
+            // Import our Python helper module.
+            let helper = PyModule::import(py, "model_driver_helper")?;
+
+            // Call the 'load_model' function from our helper.
+            let model = helper.getattr("load_model")?.call1((model_path,))?;
+
+            Ok(PyModelDriver {
+                model: model.into(),
+            })
+        })
+    }
+}
+
+impl Clone for PyModelDriver {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self {
+            model: self.model.clone_ref(py),
+        })
+    }
+}
+
+impl Driver for PyModelDriver {
+    fn choose_decomp(&self, g: &impl GraphLike) -> Decomp {
+        let mut vec_g = crate::vec_graph::Graph::new();
+        vec_g.append_graph(g);
+        let py_graph_wrapper = py_graph_wrapper::PyVecGraph { g: vec_g };
+        let result = Python::with_gil(|py| {
+            // Import the helper module again.
+            let helper = PyModule::import(py, "model_driver_helper")
+                .expect("Failed to import model_driver_helper.py");
+
+            // Get a Python reference to our model object.
+            let model_py = self.model.bind(py);
+
+            // Call the 'run_model_on_graph' function.
+            let result_tuple = helper
+                .getattr("run_model_on_graph")
+                .expect("Could not find 'run_model_on_graph' function")
+                .call1((model_py, py_graph_wrapper))
+                .expect("Python function call failed");
+
+            // Extract the results from the Python tuple (string, list)
+            let (decomp_name, vertices): (String, Vec<usize>) = result_tuple
+                .extract()
+                .expect("Failed to extract result from Python");
+            println!("{}", decomp_name);
+            println!("{:?}", vertices);
+            (decomp_name, vertices)
+        });
+
+        let (decomp_name, vertices) = result;
+
+        // Map the string result back to your Rust Decomp enum.
+        // Based on your model's output, "CUT" seems to correspond to a single-vertex decomposition.
+        match decomp_name.as_str() {
+            "CUT" => {
+                if vertices.is_empty() {
+                    // Fallback if the model returns no vertices
+                    println!("Warning: PyModelDriver returned CUT with no vertices. Falling back.");
+                    // Choose a default decomposition, e.g., the first T gate.
+                    let ts = first_ts(g);
+                    if ts.is_empty() {
+                        panic!("No T-gates found for fallback decomposition.");
+                    }
+                    Decomp::SingleDecomp(ts)
+                } else {
+                    // Use the vertex provided by the model.
+                    Decomp::SingleDecomp(vertices)
+                }
+            }
+            // Add other cases if your model can return other decomposition types
+            // "CAT" => Decomp::CatDecomp(vertices),
+            // "MAGIC5" => Decomp::Magic5FromCat(vertices),
+            _ => {
+                panic!(
+                    "Unsupported decomposition type from Python model: {}",
+                    decomp_name
+                );
+            }
+        }
     }
 }
 

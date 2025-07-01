@@ -9,3 +9,4 @@ quizx.egg-info
 libquizx.egg-info
 .vscode
 benches/results/*
+saved_models/*

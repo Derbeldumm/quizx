@@ -1211,6 +1211,7 @@ dependencies = [
  "num",
  "openqasm",
  "predicates",
+ "pyo3",
  "rand",
  "rayon",
  "regex",
