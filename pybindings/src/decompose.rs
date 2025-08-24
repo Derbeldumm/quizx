@@ -21,6 +21,19 @@ impl From<SimpFunc> for ::quizx::decompose::SimpFunc {
 }
 
 #[pyclass]
+pub struct PyModelDriver {
+    driver: ::quizx::decompose::PyModelDriver
+}
+
+#[pymethods]
+impl PyModelDriver {
+    #[new]
+    fn new(model_path: &str) -> PyModelDriver {
+        PyModelDriver { driver: ::quizx::decompose::PyModelDriver::new(model_path).expect("Failed to create PyModelDriver") }
+    }
+}
+
+#[pyclass]
 pub struct Decomposer {
     d: ::quizx::decompose::Decomposer<::quizx::vec_graph::Graph>,
 }
@@ -86,13 +99,14 @@ impl Decomposer {
     //     self.d.get_observations()
     // }
 
-    #[pyo3(signature = (driver_type = "BssWithCats", random_t = false, sherlock_tries = Vec::new(), dynamic_t_only = false))]
+    #[pyo3(signature = (driver_type = "BssWithCats", random_t = false, sherlock_tries = Vec::new(), dynamic_t_only = false, py_model = None))]
     fn decompose(
         &mut self,
         driver_type: &str,
         random_t: bool,
         sherlock_tries: Vec<usize>,
         dynamic_t_only: bool,
+        py_model: Option<&PyModelDriver>
     ) {
         match driver_type {
             "BssTOnly" => {
@@ -115,6 +129,9 @@ impl Decomposer {
             }
             "SpiderCutting" => {
                 self.d.decompose(&quizx::decompose::SpiderCuttingDriver);
+            }
+            "PyModel" => {
+                self.d.decompose(&py_model.expect("No PyModel given!").driver);
             }
             _ => {
                 println!("Driver Not Supported!");

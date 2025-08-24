@@ -13,6 +13,7 @@ use crate::decompose::{Decomposer, SimpFunc};
 use crate::scalar::Scalar;
 use crate::vec_graph::VecGraph;
 
+use ::quizx::decompose::Decomp;
 use ::quizx::extract::ExtractError;
 use ::quizx::extract::ToCircuit;
 use ::quizx::graph::V;
@@ -29,8 +30,17 @@ fn quizx(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(extract_circuit, m)?)?;
     m.add_function(wrap_pyfunction!(qasm, m)?)?;
     m.add_function(wrap_pyfunction!(apply_single_decomp, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_magic5_decomp, m)?)?;
+    m.add_function(wrap_pyfunction!(eff_alpha, m)?)?;
+
+    m.add_function(wrap_pyfunction!(generate_iqp_circuit_graph, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_mod_shift_circuit_graph, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_exp_pauli_circuit_graph, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_cliff_t_ccz_circuit_graph, m)?)?;
+    
     m.add_class::<VecGraph>()?;
     m.add_class::<Decomposer>()?;
+    m.add_class::<decompose::PyModelDriver>()?;
     m.add_class::<SimpFunc>()?;
     m.add_class::<Scalar>()?;
     Ok(())
@@ -76,4 +86,73 @@ fn apply_single_decomp(g: &mut VecGraph, verts: Vec<V>) -> Vec<VecGraph> {
         .into_iter()
         .map(|g| VecGraph { g })
         .collect()
+}
+
+#[pyfunction]
+fn apply_magic5_decomp(g: &mut VecGraph, verts: Vec<V>) -> Vec<VecGraph> {
+    ::quizx::decompose::apply_magic5_from_cat_decomp(&g.g, &verts)
+        .into_iter()
+        .map(|g| VecGraph { g })
+        .collect()
+}
+
+#[pyfunction]
+fn eff_alpha(g: &mut VecGraph, decomp_type: String, verts: Vec<V>) -> f64 {
+    let decomp = match decomp_type.as_str() {
+        "cut" => Decomp::SpiderCuttingDecomp(verts),
+        "magic5" => Decomp::Magic5FromCat(verts),
+        _ => panic!("Decompoistion Type not known"),
+    };
+    // println!("{}", decomp);
+    ::quizx::decompose::eff_alpha(&g.g, &decomp)
+}
+
+#[pyfunction]
+fn generate_iqp_circuit_graph(qubits: usize) -> VecGraph {
+    let mut builder = ::quizx::generate::RandomIqpBuilder{
+        ..Default::default()
+    };
+    builder.qubits(qubits);
+    VecGraph { 
+        g: builder.build().to_graph() 
+    }
+}
+
+#[pyfunction]
+fn generate_mod_shift_circuit_graph(qubits: usize, n_fredkin: usize) -> VecGraph {
+    let mut builder = ::quizx::generate::RandomModHiddenShiftCircuitBuilder{
+        ..Default::default()
+    };
+    builder.qubits(qubits);
+    builder.n_fredkin(n_fredkin);
+    VecGraph { 
+        g: builder.build().0.to_graph() 
+    }
+}
+
+#[pyfunction]
+fn generate_exp_pauli_circuit_graph(qubits: usize, depth: usize) -> VecGraph {
+    let mut builder = ::quizx::generate::RandomPauliGadgetCircuitBuilder{
+        ..Default::default()
+    };
+    builder.qubits(qubits);
+    builder.depth(depth);
+    VecGraph { 
+        g: builder.build().to_graph() 
+    }
+}
+
+#[pyfunction]
+fn generate_cliff_t_ccz_circuit_graph(qubits: usize, depth: usize) -> VecGraph {
+    let mut builder = ::quizx::generate::RandomCczBuilder{
+        ..Default::default()
+    };
+    builder.p_ccz(0.05);
+    builder.p_t(0.05);
+    builder.with_cliffords();
+    builder.qubits(qubits);
+    builder.depth(depth);
+    VecGraph { 
+        g: builder.build().to_graph() 
+    }
 }

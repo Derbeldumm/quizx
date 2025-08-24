@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         d1.decompose_until_depth(3, &driver);
         if d1.max_terms() < max {
             max = d1.max_terms();
-            println!("lower max: {}", max);
+            println!("lower max: {max}");
             best_d = d1;
         }
     }

@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (50, 30, 1337)
     };
     if debug {
-        println!("qubits: {}, # ccz: {}, seed: {}", qs, n_ccz, seed);
+        println!("qubits: {qs}, # ccz: {n_ccz}, seed: {seed}");
     }
 
     // generate hidden shift circuit as in Bravyi-Gosset 2016
@@ -113,8 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Simul: {}", shift_m.iter().format(""));
         println!("Check: {}", shift == shift_m);
         println!(
-            "Circuit with {} qubits and T-count {} simulated in {:.2?}",
-            qs, tcount, time
+            "Circuit with {qs} qubits and T-count {tcount} simulated in {time:.2?}"
         );
         println!("Got {} terms ({:+e} naive)", terms, (qs as f64) * naive);
     }
@@ -129,11 +128,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tcounts.iter().format(",")
     );
     if shift == shift_m {
-        print!("OK {}", data);
-        fs::write(format!("hidden_shift_{}_{}_{}", qs, n_ccz, seed), data)
+        print!("OK {data}");
+        fs::write(format!("hidden_shift_{qs}_{n_ccz}_{seed}"), data)
             .expect("Unable to write file");
     } else {
-        print!("FAILED {}", data);
+        print!("FAILED {data}");
     }
     Ok(())
 }

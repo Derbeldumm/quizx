@@ -46,8 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     if debug {
         println!(
-            "qubits: {}, depth: {}, min_weight: {}, max_weight: {}, seed: {}",
-            qs, depth, min_weight, max_weight, seed
+            "qubits: {qs}, depth: {depth}, min_weight: {min_weight}, max_weight: {max_weight}, seed: {seed}"
         );
     }
     let c = Circuit::random_pauli_gadget()
@@ -77,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut time = Duration::from_millis(0);
 
     for s in 1..=nsamples {
-        println!("Sample {} of {}", s, nsamples);
+        println!("Sample {s} of {nsamples}");
         g = c.to_graph();
         g.plug_inputs(&vec![BasisElem::Z0; qs]);
         let mut prob;
@@ -126,8 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if debug {
             println!(
-                "Circuit with {} qubits and T-count {} simulated in {:.2?}",
-                qs, tcount, time
+                "Circuit with {qs} qubits and T-count {tcount} simulated in {time:.2?}"
             );
         }
     }
@@ -135,8 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let naive: f64 = (nsamples as f64) * (qs as f64) * terms_for_tcount(2 * tcount);
     let no_simp: f64 = tcounts.iter().map(|&t| terms_for_tcount(t)).sum();
     println!(
-        "Got {} terms across all samples ({:+e} naive, {:+e} no-simp)",
-        terms, naive, no_simp
+        "Got {terms} terms across all samples ({naive:+e} naive, {no_simp:+e} no-simp)"
     );
 
     // let data = format!("\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{:+e}\",\"{:+e}\"\n",

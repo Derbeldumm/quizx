@@ -51,11 +51,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Tensors match!");
                 println!("After:\n{}", c1.stats());
             } else {
-                println!("Tensors don't match. \n{}\n\n{}", c, c1);
+                println!("Tensors don't match. \n{c}\n\n{c1}");
             }
         }
         Err(ExtractError(msg, _c, _g)) => {
-            println!("extract failed: {}", msg);
+            println!("extract failed: {msg}");
             println!("{}\n\n{}\n\n{}", msg, _c, _g.to_dot());
         }
     }

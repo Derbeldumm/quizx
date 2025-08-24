@@ -58,7 +58,6 @@ def quizx_to_pyg(zx_diagram, random_feature_dim: int = 0) -> Data:
         [vertex_phases[v] % 0.5 == 0.25 for v in vertices]
     ).bool()
     decomp_mask[Decomp.CUT.name] = torch.ones(len(vertices)).bool()
-    print(decomp_mask.keys())
 
     # Create tensor with edge connectivity information.
     # edges = [
@@ -153,10 +152,13 @@ def add_struct_features(graph: Data, n, edges):
 
 def load_model(model_path: str):
     """Loads the pickled PyTorch model."""
-    print(f"Loading model from: {model_path}")
+    print(f"Loading model from: {model_path}")  
     # The model was saved with torch.save(model, ...), so we load it directly.
     # Ensure the SupervisedModel class definition is available in the environment.
-    model = torch.load(model_path, weights_only=False)
+    try:
+        model = torch.load(model_path, weights_only=False)
+    except Exception as err:
+        print("Error when loading model", err)
     print("Loading suceess!")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
@@ -168,6 +170,8 @@ def run_model_on_graph(model, rust_graph) -> Tuple[str, List[int]]:
     """
     Converts a quizx graph from Rust, runs the model, and returns the chosen decomposition.
     """
+    if len(rust_graph.vertices())<5:
+        return ("CUT", [0])
     # 1. Convert the graph from quizx format to pyg format
     pyg_data = quizx_to_pyg(rust_graph)
 
@@ -183,6 +187,9 @@ def run_model_on_graph(model, rust_graph) -> Tuple[str, List[int]]:
     # 4. Extract the decomposition type and vertices
     # Example result: [(Decomp.CUT, [15], 0, 0, 0)]
     decomp_obj, vertices, _, _, _ = result[0]
+
+    # print(decomp_obj)
+    # print(vertices)
 
     # We need to return simple types (str, list) back to Rust
     decomp_name = decomp_obj.name  # e.g., "CUT"

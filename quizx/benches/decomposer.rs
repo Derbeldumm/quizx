@@ -12,14 +12,14 @@ fn benchmark_graph_scalar(c: &mut Criterion) {
     for file in get_test_files() {
         let file_name = file.split('/').next_back().unwrap_or("unknown_file");
         let qasm = std::fs::read_to_string(&file)
-            .unwrap_or_else(|_| panic!("Failed to read QASM file: {}", file));
+            .unwrap_or_else(|_| panic!("Failed to read QASM file: {file}"));
         // Path to the graph file
         let circ = Circuit::from_qasm(&qasm).expect("Failed to create circuit from QASM");
         let vec_graph: VecGraph = circ.to_graph();
         let hash_graph: HashGraph = circ.to_graph();
 
         // Benchmark the scalar evaluation
-        c.bench_function(&format!("evaluate_vec_graph_scalar_{}", file_name), |b| {
+        c.bench_function(&format!("evaluate_vec_graph_scalar_{file_name}"), |b| {
             b.iter_batched_ref(
                 || vec_graph.clone(), // Clone the graph before timing
                 |g| {
@@ -33,7 +33,7 @@ fn benchmark_graph_scalar(c: &mut Criterion) {
         });
 
         // Benchmark the scalar evaluation
-        c.bench_function(&format!("evaluate_hash_graph_scalar_{}", file_name), |b| {
+        c.bench_function(&format!("evaluate_hash_graph_scalar_{file_name}"), |b| {
             b.iter_batched_ref(
                 || hash_graph.clone(), // Clone the graph before timing
                 |g| {

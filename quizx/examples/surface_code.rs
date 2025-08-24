@@ -12,8 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rounds = 60;
     let time = Instant::now();
     println!(
-        "Building surface code circuit with distance {} and {} rounds...",
-        distance, rounds
+        "Building surface code circuit with distance {distance} and {rounds} rounds..."
     );
     let c = Circuit::surface_code()
         .distance(distance)

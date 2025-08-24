@@ -141,9 +141,9 @@ impl fmt::Display for Dyadic {
             e = 0;
         }
 
-        write!(f, "{}", v)?;
+        write!(f, "{v}")?;
         if e != 0 {
-            write!(f, "e{}", e)?;
+            write!(f, "e{e}")?;
         }
 
         Ok(())
@@ -397,7 +397,7 @@ mod test {
     #[case(Dyadic::new(1, -11), "1e-11")]
     #[case(Dyadic::new(-1, -11), "-1e-11")]
     fn str(#[case] d: Dyadic, #[case] s: &str) {
-        assert_eq!(format!("{}", d), s);
+        assert_eq!(format!("{d}"), s);
     }
 
     #[rstest]
@@ -414,7 +414,7 @@ mod test {
     #[case(Dyadic::new(12, 10), Dyadic::new(-3, 4), Dyadic::new(12*1024 - 3*16, 0))]
     #[case(Dyadic::new(5, -8), Dyadic::new(3, 2), Dyadic::new(5 + 3*1024, -8))]
     fn add(#[case] d1: Dyadic, #[case] d2: Dyadic, #[case] d3: Dyadic) {
-        println!("{:?} + {:?} = {:?}", d1, d2, d3);
+        println!("{d1:?} + {d2:?} = {d3:?}");
         assert_eq!(d1 + d2, d3);
     }
 
@@ -425,7 +425,7 @@ mod test {
     #[case(Dyadic::new(5, -8), Dyadic::new(3, 2), Dyadic::new(5 * 3, -6))]
     #[case(Dyadic::new(1, 0), Dyadic::new(0, 0), Dyadic::new(0, 0))]
     fn mul(#[case] d1: Dyadic, #[case] d2: Dyadic, #[case] d3: Dyadic) {
-        println!("{:?} * {:?} = {:?}", d1, d2, d3);
+        println!("{d1:?} * {d2:?} = {d3:?}");
         assert_eq!(d1 * d2, d3);
     }
 

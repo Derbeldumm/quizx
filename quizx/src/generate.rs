@@ -40,6 +40,13 @@ pub struct RandomHiddenShiftCircuitBuilder {
     pub n_ccz: usize,
 }
 
+pub struct RandomModHiddenShiftCircuitBuilder {
+    pub rng: StdRng,
+    pub qubits: usize,
+    pub clifford_depth: usize,
+    pub n_fredkin: usize,
+}
+
 pub struct RandomPauliGadgetCircuitBuilder {
     pub rng: StdRng,
     pub qubits: usize,
@@ -47,6 +54,16 @@ pub struct RandomPauliGadgetCircuitBuilder {
     pub min_weight: usize,
     pub max_weight: usize,
     pub phase_denom: usize,
+}
+
+pub struct RandomIqpBuilder {
+    pub rng: StdRng,
+    pub qubits: usize,
+}
+
+pub struct RandomCczBuilder {
+    pub base: RandomCircuitBuilder,
+    pub p_ccz: f32,
 }
 
 pub struct SurfaceCodeCircuitBuilder {
@@ -68,6 +85,14 @@ impl Circuit {
     }
 
     pub fn surface_code() -> SurfaceCodeCircuitBuilder {
+        Default::default()
+    }
+
+    pub fn random_iqp() -> RandomIqpBuilder {
+        Default::default()
+    }
+
+    pub fn random_ccz() -> RandomCczBuilder {
         Default::default()
     }
 }
@@ -98,6 +123,17 @@ impl Default for RandomHiddenShiftCircuitBuilder {
     }
 }
 
+impl Default for RandomModHiddenShiftCircuitBuilder {
+    fn default() -> Self {
+        RandomModHiddenShiftCircuitBuilder {
+            rng: StdRng::from_entropy(),
+            qubits: 40,
+            clifford_depth: 200,
+            n_fredkin: 5,
+        }
+    }
+}
+
 impl Default for RandomPauliGadgetCircuitBuilder {
     fn default() -> Self {
         RandomPauliGadgetCircuitBuilder {
@@ -116,6 +152,33 @@ impl Default for SurfaceCodeCircuitBuilder {
         SurfaceCodeCircuitBuilder {
             distance: 3,
             rounds: 3,
+        }
+    }
+}
+
+impl Default for RandomIqpBuilder {
+    fn default() -> Self {
+        RandomIqpBuilder {
+            rng: StdRng::from_entropy(),
+            qubits: 40,
+        }
+    }
+}
+
+impl Default for RandomCczBuilder {
+    fn default() -> Self {
+        RandomCczBuilder {
+            base: RandomCircuitBuilder {
+                rng: StdRng::from_entropy(),
+                qubits: 0,
+                depth: 0,
+                p_cnot: 0.0,
+                p_cz: 0.0,
+                p_h: 0.0,
+                p_s: 0.0,
+                p_t: 0.0,
+            },
+            p_ccz: 0.0,
         }
     }
 }
@@ -289,6 +352,115 @@ impl RandomHiddenShiftCircuitBuilder {
         for _ in 0..self.n_ccz {
             self.random_clifford_layer(&mut oraclef);
             self.random_ccz(&mut oraclef);
+        }
+        self.random_clifford_layer(&mut oraclef);
+
+        let mut oracleg = oraclef.clone();
+        oracleg
+            .gates
+            .iter_mut()
+            .for_each(|g| g.qs.iter_mut().for_each(|q| *q += self.qubits / 2));
+
+        for q in 0..self.qubits / 2 {
+            oraclef.push(Gate::new(CZ, vec![q, q + (self.qubits / 2)]));
+            oracleg.push(Gate::new(CZ, vec![q, q + (self.qubits / 2)]));
+        }
+
+        let mut shift = vec![];
+        let mut shift_c = Circuit::new(self.qubits);
+        for q in 0..self.qubits {
+            if self.rng.gen_bool(0.5) {
+                shift.push(1);
+                shift_c.push(Gate::new(Z, vec![q]));
+            } else {
+                shift.push(0);
+            }
+        }
+
+        let mut hs = Circuit::new(self.qubits);
+        for q in 0..self.qubits {
+            hs.push(Gate::new(HAD, vec![q]));
+        }
+
+        let mut c = Circuit::new(self.qubits);
+        c += &hs;
+        c += &oraclef;
+        c += &hs;
+        c += &shift_c;
+        c += &oracleg;
+        c += &hs;
+        (c, shift)
+    }
+}
+
+impl RandomModHiddenShiftCircuitBuilder {
+    pub fn seed(&mut self, seed: u64) -> &mut Self {
+        self.rng = StdRng::seed_from_u64(seed);
+        self
+    }
+    pub fn qubits(&mut self, qubits: usize) -> &mut Self {
+        self.qubits = qubits;
+        self
+    }
+    pub fn clifford_depth(&mut self, clifford_depth: usize) -> &mut Self {
+        self.clifford_depth = clifford_depth;
+        self
+    }
+    pub fn n_fredkin(&mut self, n_fredkin: usize) -> &mut Self {
+        self.n_fredkin = n_fredkin;
+        self
+    }
+
+    fn random_clifford_layer(&mut self, c: &mut Circuit) {
+        let qs = self.qubits / 2;
+        for _ in 0..self.clifford_depth {
+            let q0 = self.rng.gen_range(0..qs);
+
+            if self.rng.gen_bool(0.5) {
+                c.push(Gate::new(Z, vec![q0]));
+            } else {
+                let mut q1 = self.rng.gen_range(0..qs - 1);
+                if q1 >= q0 {
+                    q1 += 1;
+                }
+                c.push(Gate::new(CZ, vec![q0, q1]));
+            }
+        }
+    }
+
+    fn random_fredkin(&mut self, c: &mut Circuit) {
+        let qs = self.qubits / 2;
+        let mut q0 = self.rng.gen_range(0..qs);
+        let mut q1 = self.rng.gen_range(0..qs - 1);
+        let mut q2 = self.rng.gen_range(0..qs - 2);
+        if q1 >= q0 {
+            q1 += 1;
+        } else {
+            mem::swap(&mut q0, &mut q1);
+        }
+        if q2 >= q0 {
+            q2 += 1;
+        }
+        if q2 >= q1 {
+            q2 += 1;
+        }
+
+        // Controlled Swap - Fredkin
+        c.push(Gate::new(CNOT, vec![q2, q1]));
+        c.push(Gate::new(HAD, vec![q2]));
+        c.push(Gate::new(CCZ, vec![q0, q1, q2]));
+        c.push(Gate::new(HAD, vec![q2]));
+        c.push(Gate::new(CNOT, vec![q2, q1]));
+    }
+
+    pub fn build(&mut self) -> (Circuit, Vec<u8>) {
+        if self.qubits < 6 || self.qubits % 2 != 0 {
+            panic!("Random hidden shift circuits must have an even number of qubits >= 6.");
+        }
+        let mut oraclef = Circuit::new(self.qubits);
+        for _ in 0..self.n_fredkin {
+            self.random_clifford_layer(&mut oraclef);
+            self.random_fredkin(&mut oraclef);
         }
         self.random_clifford_layer(&mut oraclef);
 
@@ -504,6 +676,185 @@ impl SurfaceCodeCircuitBuilder {
             c.push(Gate::new(GType::Measure, vec![i]));
         }
 
+        c
+    }
+}
+
+// By Julien Codsi, Adapted by Wira
+impl RandomIqpBuilder {
+    pub fn seed(&mut self, seed: u64) -> &mut Self {
+        self.rng = StdRng::seed_from_u64(seed);
+        self
+    }
+
+    pub fn qubits(&mut self, qubits: usize) -> &mut Self {
+        self.qubits = qubits;
+        self
+    }
+
+    pub fn build(&mut self) -> Circuit {
+        let mut c = Circuit::new(self.qubits);
+
+        //firet layer of Hadamard + random T
+        for i in 0..self.qubits {
+            c.add_gate("h", vec![i]);
+            let t_phase = self.rng.gen_range(0..8);
+            c.add_gate_with_phase("rz", vec![i], Rational64::new(t_phase, 4));
+        }
+
+        for i in 0..self.qubits {
+            for j in i + 1..self.qubits {
+                if j == i {
+                    continue;
+                } // the parser did not crash with cx [i,i]!!!!!
+
+                let n_sgate = self.rng.gen_range(0..=3);
+
+                if n_sgate == 0 {
+                    continue;
+                }
+
+                //implementation of a power of a CS gate
+                c.add_gate_with_phase("rz", vec![i], Rational64::new(n_sgate, 4));
+                c.add_gate_with_phase("rz", vec![j], Rational64::new(n_sgate, 4));
+                c.add_gate("cx", vec![i, j]);
+                c.add_gate_with_phase("rz", vec![j], Rational64::new(-n_sgate, 4));
+                c.add_gate("cx", vec![i, j]);
+            }
+
+            //final layer of Hadamard
+            c.add_gate("h", vec![i]);
+        }
+
+        c
+    }
+}
+
+impl RandomCczBuilder {
+    pub fn seed(&mut self, seed: u64) -> &mut Self {
+        self.base.rng = StdRng::seed_from_u64(seed);
+        self
+    }
+
+    pub fn qubits(&mut self, qubits: usize) -> &mut Self {
+        self.base.qubits(qubits);
+        self
+    }
+
+    pub fn depth(&mut self, depth: usize) -> &mut Self {
+        self.base.depth(depth);
+        self
+    }
+
+    pub fn p_cnot(&mut self, p_cnot: f32) -> &mut Self {
+        self.base.p_cnot(p_cnot);
+        self
+    }
+
+    pub fn p_cz(&mut self, p_cz: f32) -> &mut Self {
+        self.base.p_cz(p_cz);
+        self
+    }
+
+    pub fn p_h(&mut self, p_h: f32) -> &mut Self {
+        self.base.p_h(p_h);
+        self
+    }
+
+    pub fn p_s(&mut self, p_s: f32) -> &mut Self {
+        self.base.p_s(p_s);
+        self
+    }
+
+    pub fn p_t(&mut self, p_t: f32) -> &mut Self {
+        self.base.p_t(p_t);
+        self
+    }
+
+    pub fn p_ccz(&mut self, p_ccz: f32) -> &mut Self {
+        self.p_ccz = p_ccz;
+        self
+    }
+
+    /// Distribute the remaining probability evenly among Clifford (CNOT, H, S, CZ) gates
+    pub fn with_cliffords(&mut self) -> &mut Self {
+        let p = (1.0 - self.base.p_t - self.p_ccz) / 4.0;
+        self.p_cnot(p);
+        self.p_h(p);
+        self.p_s(p);
+        self.p_cz(p);
+
+        self
+    }
+
+    pub fn build(&mut self) -> Circuit {
+        let mut c = Circuit::new(self.base.qubits);
+
+        for _ in 0..self.base.depth {
+            let mut p0 = 0.0;
+
+            let p: f32 = self.base.rng.gen();
+
+            let mut q0 = self.base.rng.gen_range(0..self.base.qubits);
+            let mut q1 = self.base.rng.gen_range(0..self.base.qubits - 1);
+            let mut q2 = self.base.rng.gen_range(0..self.base.qubits - 2);
+
+            if q1 >= q0 {
+                q1 += 1;
+            } else {
+                mem::swap(&mut q0, &mut q1);
+            }
+
+            if q2 >= q0 {
+                q2 += 1;
+            }
+
+            if q2 >= q1 {
+                q2 += 1;
+            }
+
+            p0 += self.base.p_cnot;
+
+            if p < p0 {
+                c.push(Gate::new(CNOT, vec![q0, q1]));
+                continue;
+            }
+
+            p0 += self.base.p_cz;
+
+            if p < p0 {
+                c.push(Gate::new(CZ, vec![q0, q1]));
+                continue;
+            }
+
+            p0 += self.base.p_h;
+
+            if p < p0 {
+                c.push(Gate::new(HAD, vec![q0]));
+                continue;
+            }
+
+            p0 += self.base.p_s;
+
+            if p < p0 {
+                c.push(Gate::new(S, vec![q0]));
+                continue;
+            }
+
+            p0 += self.base.p_t;
+
+            if p < p0 {
+                c.push(Gate::new(T, vec![q0]));
+                continue;
+            }
+
+            p0 += self.p_ccz;
+
+            if p < p0 {
+                c.push(Gate::new(CCZ, vec![q0, q1, q2]));
+                continue;
+            }
+        }
         c
     }
 }

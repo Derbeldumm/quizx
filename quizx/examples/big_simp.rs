@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("stats after: {}", c1.stats());
         }
         Err(ExtractError(msg, _c, _g)) => {
-            println!("extract failed: {}", msg);
+            println!("extract failed: {msg}");
             // println!("{}\n\n{}\n\n{}", msg, _c, _g.to_dot());
         }
     }

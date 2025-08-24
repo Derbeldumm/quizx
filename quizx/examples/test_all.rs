@@ -26,9 +26,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for e in fs::read_dir("circuits/small")? {
         if let Some(f) = e?.path().to_str() {
             let time = Instant::now();
-            println!("{}", f);
+            println!("{f}");
             let c = Circuit::from_file(f)
-                .unwrap_or_else(|e| panic!("circuit failed to parse: {}. {}", f, e));
+                .unwrap_or_else(|e| panic!("circuit failed to parse: {f}. {e}"));
             println!("...done reading in {:.2?}", time.elapsed());
             // if c.num_qubits() > 10 { continue; }
 
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 Err(ExtractError(msg, _c, _g)) => {
-                    println!("extract failed: {}", msg);
+                    println!("extract failed: {msg}");
                     // println!("{}\n\n{}\n\n{}", msg, _c, _g.to_dot());
                 }
             }

@@ -27,6 +27,6 @@ fn main() {
     let a = array![[1, 2], [3, 4]];
     let b = stack![Axis(0), a, a];
     // let sh = Vec::from(b.shape());
-    println!("{}", b);
+    println!("{b}");
     println!("{:?}", b.shape());
 }

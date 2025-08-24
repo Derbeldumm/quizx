@@ -596,7 +596,7 @@ mod tests {
         let nullspace = mat.nullspace();
         assert_eq!(nullspace.len(), 1);
         assert_eq!(nullspace[0].d, vec![vec![1, 1, 1]]);
-        println!("Matrix is \n{}", mat)
+        println!("Matrix is \n{mat}")
     }
 
     #[test]

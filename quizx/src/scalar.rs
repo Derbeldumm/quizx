@@ -682,7 +682,7 @@ mod test {
     #[case(Scalar4::new([2, 0, 0, 0], -10))]
     fn scalar4_roundtrip(#[case] scalar: Scalar4) {
         let complex = scalar.complex_value();
-        println!("complex value = {}", complex);
+        println!("complex value = {complex}");
         let scalar1 = Scalar4::from(complex);
         assert_abs_diff_eq!(scalar, scalar1);
     }
@@ -693,28 +693,28 @@ mod test {
         let phase = Scalar4::new([0, 1, 0, 0], 0);
 
         let s = phase;
-        println!("{}", s);
+        println!("{s}");
         assert_eq!(
             s.exact_phase_and_sqrt2_pow(),
             Some((Rational64::new(1, 4).into(), 0))
         );
 
         let s = phase * sqrt2;
-        println!("{}", s);
+        println!("{s}");
         assert_eq!(
             s.exact_phase_and_sqrt2_pow(),
             Some((Rational64::new(1, 4).into(), 1))
         );
 
         let s = phase * sqrt2 * sqrt2;
-        println!("{}", s);
+        println!("{s}");
         assert_eq!(
             s.exact_phase_and_sqrt2_pow(),
             Some((Rational64::new(1, 4).into(), 2))
         );
 
         let s = phase * phase * sqrt2;
-        println!("{}", s);
+        println!("{s}");
         assert_eq!(
             s.exact_phase_and_sqrt2_pow(),
             Some((Rational64::new(1, 2).into(), 1))

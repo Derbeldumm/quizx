@@ -24,9 +24,9 @@ use std::{thread, time};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let f = "circuits/large/gf2^64_mult.qasm";
     let time = Instant::now();
-    println!("{}", f);
+    println!("{f}");
     let c =
-        Circuit::from_file(f).unwrap_or_else(|e| panic!("circuit failed to parse: {}. {}", f, e));
+        Circuit::from_file(f).unwrap_or_else(|e| panic!("circuit failed to parse: {f}. {e}"));
     println!("...done reading in {:.2?}", time.elapsed());
 
     // println!("Computing tensor");
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("extracted ok");
         }
         Err(ExtractError(msg, _c, _g)) => {
-            println!("extract failed: {}", msg);
+            println!("extract failed: {msg}");
             // println!("\n\n{}", _g.to_dot());
         }
     }

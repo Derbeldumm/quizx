@@ -71,11 +71,11 @@ pub fn load_graph(path: &str) -> Graph {
 
         let a = *id_map
             .get(a_id)
-            .unwrap_or_else(|| panic!("Unknown vertex ID: {}", a_id));
+            .unwrap_or_else(|| panic!("Unknown vertex ID: {a_id}"));
 
         let b = *id_map
             .get(b_id)
-            .unwrap_or_else(|| panic!("Unknown vertex ID: {}", b_id));
+            .unwrap_or_else(|| panic!("Unknown vertex ID: {b_id}"));
 
         g.add_edge(a, b);
     }

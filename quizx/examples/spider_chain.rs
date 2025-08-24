@@ -22,7 +22,7 @@ use std::time::Instant;
 
 fn main() {
     let sz = 100_000;
-    println!("Building Z-spider chain of size: {}...", sz);
+    println!("Building Z-spider chain of size: {sz}...");
     let time = Instant::now();
     let mut g = Graph::new();
     g.add_vertex(VType::Z);

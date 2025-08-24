@@ -178,7 +178,7 @@ pub fn detection_webs(g: &mut Graph) -> Vec<PauliWeb> {
             }
         }
     }
-    log::debug!("Outputs: {:?}", outputs);
+    log::debug!("Outputs: {outputs:?}");
 
     let outs = outputs.len();
     g.set_outputs(outputs);
@@ -186,8 +186,8 @@ pub fn detection_webs(g: &mut Graph) -> Vec<PauliWeb> {
 
     // Get ordered nodes and index map
     let (nodelist, index_map) = ordered_nodes(g);
-    log::debug!("Ordered nodes: {:?}", nodelist);
-    log::debug!("outs: {}", outs);
+    log::debug!("Ordered nodes: {nodelist:?}");
+    log::debug!("outs: {outs}");
 
     // Get adjacency matrix in the specified node order
     let big_n = g.adjacency_matrix(Some(&nodelist));

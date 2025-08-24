@@ -293,14 +293,13 @@ pub fn approximate_alpha_with(
     };
     match roots::find_root_brent(2f64, 0f64, &f, &mut convergency) {
         Err(error) => panic!(
-            "Couldnt Find Alpha, Error: {}, For r: {:?}",
-            error, r_values
+            "Couldnt Find Alpha, Error: {error}, For r: {r_values:?}"
         ),
         Ok(alpha) => alpha,
     }
 }
 
-fn eff_alpha(g: &impl GraphLike, d: &Decomp) -> f64 {
+pub fn eff_alpha(g: &impl GraphLike, d: &Decomp) -> f64 {
     let old_tcount = g.tcount();
     let terms = apply_decomp(g, d);
     // println!("{}", d);
@@ -370,14 +369,14 @@ use Decomp::*;
 impl std::fmt::Display for Decomp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Decomp::CatDecomp(verts) => write!(f, "CatDecomp {:?}", verts),
-            Decomp::Magic5FromCat(verts) => write!(f, "Magic5FromCat {:?}", verts),
-            Decomp::TDecomp(verts) => write!(f, "TDecomp {:?}", verts),
-            Decomp::BssDecomp(verts) => write!(f, "BssDecomp {:?}", verts),
-            Decomp::SymDecomp(verts) => write!(f, "SymDecomp {:?}", verts),
-            Decomp::SingleDecomp(verts) => write!(f, "SingleDecomp {:?}", verts),
-            Decomp::TPairDecomp(verts) => write!(f, "TPairDecomp {:?}", verts),
-            Decomp::SpiderCuttingDecomp(verts) => write!(f, "SpiderCuttingDecomp {:?}", verts),
+            Decomp::CatDecomp(verts) => write!(f, "CatDecomp {verts:?}"),
+            Decomp::Magic5FromCat(verts) => write!(f, "Magic5FromCat {verts:?}"),
+            Decomp::TDecomp(verts) => write!(f, "TDecomp {verts:?}"),
+            Decomp::BssDecomp(verts) => write!(f, "BssDecomp {verts:?}"),
+            Decomp::SymDecomp(verts) => write!(f, "SymDecomp {verts:?}"),
+            Decomp::SingleDecomp(verts) => write!(f, "SingleDecomp {verts:?}"),
+            Decomp::TPairDecomp(verts) => write!(f, "TPairDecomp {verts:?}"),
+            Decomp::SpiderCuttingDecomp(verts) => write!(f, "SpiderCuttingDecomp {verts:?}"),
         }
     }
 }
@@ -434,7 +433,6 @@ pub struct PyModelDriver {
 impl PyModelDriver {
     /// Creates a new driver by loading a PyTorch model from the specified path.
     pub fn new(model_path: &str) -> PyResult<Self> {
-        println!("{}", model_path);
         // Get the Python interpreter and GIL.
         Python::with_gil(|py| {
             // Add the current directory to Python's path to find our helper module.
@@ -468,6 +466,15 @@ impl Driver for PyModelDriver {
     fn choose_decomp(&self, g: &impl GraphLike) -> Decomp {
         let mut vec_g = crate::vec_graph::Graph::new();
         vec_g.append_graph(g);
+        // println!("{}", g.to_dot());
+        // println!("{}", vec_g.to_dot());
+
+        let ts = first_ts(&vec_g);
+
+        if ts.len() < 5 {
+            return Decomp::SingleDecomp(ts)
+        }
+
         let py_graph_wrapper = py_graph_wrapper::PyVecGraph { g: vec_g };
         let result = Python::with_gil(|py| {
             // Import the helper module again.
@@ -488,13 +495,12 @@ impl Driver for PyModelDriver {
             let (decomp_name, vertices): (String, Vec<usize>) = result_tuple
                 .extract()
                 .expect("Failed to extract result from Python");
-            println!("{}", decomp_name);
-            println!("{:?}", vertices);
             (decomp_name, vertices)
         });
 
-        let (decomp_name, vertices) = result;
-
+        let (decomp_name, mut vertices) = result;
+        let g_vertices: Vec<_> = g.vertices().collect();
+        vertices = vertices.into_iter().map(|v| g_vertices[v]).collect();
         // Map the string result back to your Rust Decomp enum.
         // Based on your model's output, "CUT" seems to correspond to a single-vertex decomposition.
         match decomp_name.as_str() {
@@ -515,11 +521,10 @@ impl Driver for PyModelDriver {
             }
             // Add other cases if your model can return other decomposition types
             // "CAT" => Decomp::CatDecomp(vertices),
-            // "MAGIC5" => Decomp::Magic5FromCat(vertices),
+            "MAGIC5" => Decomp::Magic5FromCat(vertices),
             _ => {
                 panic!(
-                    "Unsupported decomposition type from Python model: {}",
-                    decomp_name
+                    "Unsupported decomposition type from Python model: {decomp_name}"
                 );
             }
         }
@@ -793,7 +798,7 @@ impl Driver for SherlockDriver {
             // .inspect(|decomp| println!("{:?}", decomp))
             .min_by(|(val1, _), (val2, _)| val1.partial_cmp(val2).unwrap())
         {
-            None => SingleDecomp(vec![]),
+            None => Decomp::SingleDecomp(first_ts(g)),
             Some((_, decomp)) => {
                 // println!("{}", decomp);
                 decomp
@@ -1198,7 +1203,7 @@ pub fn apply_single_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> {
 }
 
 /// Perform a decomposition of 5 T-spiders, with one remaining
-fn apply_magic5_from_cat_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> {
+pub fn apply_magic5_from_cat_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> {
     //println!("magic5");
     vec![
         replace_magic5_0(g, verts),
@@ -1722,7 +1727,7 @@ mod tests {
     //Test Approx Alpha
     fn test_approx_alpha() {
         let alpha = approximate_alpha_with(vec![2f64, 1f64, 2f64, 1f64], 100, 1e-6);
-        println!("{}", alpha)
+        println!("{alpha}")
     }
     // Test individual replacement functions by checking tensor equality
     // #[test]
@@ -1951,8 +1956,7 @@ mod tests {
                                 let result_scalar = d.scalar();
                                 assert_eq!(
                                         expected_scalar, result_scalar,
-                                        "Failed for t_count={}, simp={:?}, driver={:?}, split={}, parallel={}",
-                                        size, simp, driver, split, parallel
+                                        "Failed for t_count={size}, simp={simp:?}, driver={driver:?}, split={split}, parallel={parallel}"
                                     );
                             }
 
@@ -2042,8 +2046,7 @@ mod tests {
             assert_eq!(
                 expected_scalar,
                 d.scalar(),
-                "Cat state decomposition failed for size {}",
-                cat_size
+                "Cat state decomposition failed for size {cat_size}"
             );
         }
     }

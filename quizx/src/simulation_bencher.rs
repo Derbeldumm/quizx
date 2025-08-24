@@ -4,7 +4,10 @@ use std::io::{BufWriter, Write};
 use std::time::Instant;
 
 use crate::cli::CliError;
-use crate::decompose::{Decomposer, Driver, PyModelDriver, SimpFunc};
+use crate::decompose::{
+    Decomposer, Driver,
+    SherlockDriver, SimpFunc, DynamicTDriver, PyModelDriver
+};
 use crate::generate;
 use crate::graph::{BasisElem, GraphLike};
 use crate::simplify;
@@ -17,7 +20,7 @@ use std::collections::HashMap;
 
 const SEED: u64 = 42;
 const MIN_TCOUNT: usize = 6;
-const MAX_TCOUNT: usize = 25;
+const MAX_TCOUNT: usize = 30;
 const SAMPLES_PER_TCOUNT: usize = 4;
 
 fn get_testset() -> Vec<VecGraph> {
@@ -25,26 +28,27 @@ fn get_testset() -> Vec<VecGraph> {
         [(); MAX_TCOUNT - MIN_TCOUNT].map(|_| Vec::new());
     let mut count_full = 0;
 
-    let mut circuit_builder = generate::RandomCircuitBuilder {
+    let mut circuit_builder = generate::RandomPauliGadgetCircuitBuilder {
         ..Default::default()
     };
-    circuit_builder.seed(SEED).qubits(10);
-    circuit_builder.clifford_t(0.3);
-    while count_full < MAX_TCOUNT - MIN_TCOUNT {
-        for i in MIN_TCOUNT..10 * MAX_TCOUNT {
+    // circuit_builder.p_ccz(0.05).p_t(0.05).with_cliffords();
+    circuit_builder.seed(SEED).qubits(15);
+    while count_full < (MAX_TCOUNT - MIN_TCOUNT) {
+        for i in 6..MAX_TCOUNT {
             circuit_builder.depth(i);
             let mut graph: VecGraph = circuit_builder.build().to_graph();
-            graph.plug_inputs(&[BasisElem::Z0; 10]);
-            graph.plug_outputs(&[BasisElem::Z0; 10]);
+            graph.plug_inputs(&vec![BasisElem::X0; 15]);
+            graph.plug_outputs(&vec![BasisElem::X0; 15]);
             simplify::full_simp(&mut graph);
             let t_count = graph.tcount();
+            println!("Generated Graph with: {t_count}");
             if (MIN_TCOUNT..MAX_TCOUNT).contains(&t_count)
                 && graph_bins[t_count - MIN_TCOUNT].len() < SAMPLES_PER_TCOUNT
             {
                 graph_bins[t_count - MIN_TCOUNT].push(graph);
                 if graph_bins[t_count - MIN_TCOUNT].len() == SAMPLES_PER_TCOUNT {
                     count_full += 1;
-                    println!("Full: {}", t_count)
+                    println!("Full: {t_count}")
                 }
             }
         }
@@ -61,8 +65,8 @@ fn bench_setup(
     testset: &[VecGraph],
 ) {
     // Prepare CSV files for this benchmark
-    let filename_nterms = format!("benches/results/benchmark_alpha_{}.csv", name);
-    let filename_times = format!("benches/results/benchmark_times_{}.csv", name);
+    let filename_nterms = format!("benches/results/benchmark_alpha_exp_pauli_{name}.csv");
+    let filename_times = format!("benches/results/benchmark_times_exp_pauli_{name}.csv");
 
     let mut file_nterms =
         BufWriter::new(File::create(&filename_nterms).expect("Could not create nterms CSV file"));
@@ -76,7 +80,7 @@ fn bench_setup(
 
     for t_count in MIN_TCOUNT..max_tcount {
         let index = t_count - MIN_TCOUNT;
-        println!("Benchmarking {} with t_count={}", name, t_count);
+        println!("Benchmarking {name} with t_count={t_count}");
 
         for j in 0..SAMPLES_PER_TCOUNT {
             let graph = &testset[index * SAMPLES_PER_TCOUNT + j];
@@ -89,6 +93,10 @@ fn bench_setup(
                 .with_split_graphs_components(true)
                 .decompose(driver);
             let elapsed = start.elapsed();
+
+            if elapsed.as_secs() > 60 {
+                return;
+            }
 
             // Save both nterms and runtime
             writeln!(file_nterms, "{},{}", t_count, decomposer.nterms).unwrap();
@@ -111,7 +119,7 @@ fn create_svg_plot(
             .next_back()
             .unwrap()
             .replace("benchmark_", "")
-            .replace(&format!("{}_", plot_type), "")
+            .replace(&format!("{plot_type}_"), "")
             .replace(".csv", "");
 
         let mut reader = csv::Reader::from_path(&file)?;
@@ -162,14 +170,12 @@ fn create_svg_plot(
     // Create SVG
     let mut svg = String::new();
     svg.push_str(&format!(
-        r#"<svg width="{}" height="{}" xmlns="http://www.w3.org/2000/svg">"#,
-        width, height
+        r#"<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">"#
     ));
 
     // White background
     svg.push_str(&format!(
-        r#"<rect width="{}" height="{}" fill="white"/>"#,
-        width, height
+        r#"<rect width="{width}" height="{height}" fill="white"/>"#
     ));
 
     // Title
@@ -252,14 +258,13 @@ fn create_svg_plot(
             let y = margin + ((y_max - y_val) / (y_max - y_min)) * plot_height;
 
             if i == 0 {
-                path.push_str(&format!(" {} {}", x, y));
+                path.push_str(&format!(" {x} {y}"));
             } else {
-                path.push_str(&format!(" L {} {}", x, y));
+                path.push_str(&format!(" L {x} {y}"));
             }
         }
         svg.push_str(&format!(
-            r#"<path d="{}" fill="none" stroke="{}" stroke-width="2"/>"#,
-            path, color
+            r#"<path d="{path}" fill="none" stroke="{color}" stroke-width="2"/>"#
         ));
 
         // Draw points
@@ -267,8 +272,7 @@ fn create_svg_plot(
             let x = margin + ((x_val - x_min) / (x_max - x_min)) * plot_width;
             let y = margin + ((y_max - y_val) / (y_max - y_min)) * plot_height;
             svg.push_str(&format!(
-                r#"<circle cx="{}" cy="{}" r="3" fill="{}"/>"#,
-                x, y, color
+                r#"<circle cx="{x}" cy="{y}" r="3" fill="{color}"/>"#
             ));
         }
 
@@ -304,14 +308,14 @@ fn benchmark_driver(testset: &[VecGraph]) {
 
     // bench_setup(
     //     "BssTOnly",
-    //     32,
+    //         MAX_TCOUNT,
     //     &BssTOnlyDriver { random_t: false },
     //     SimpFunc::FullSimp,
     //     testset,
     // );
-    // bench_setup(
+    //  bench_setup(
     //     "BssWithCats",
-    //     MAX_TCOUNT,
+    //     20,
     //     &BssWithCatsDriver { random_t: false },
     //     SimpFunc::FullSimp,
     //     testset,
@@ -323,51 +327,86 @@ fn benchmark_driver(testset: &[VecGraph]) {
     //     SimpFunc::FullSimp,
     //     testset,
     // );
+        // bench_setup(
+        //     "DynamicT_VC_only",
+        //     MAX_TCOUNT,
+        //     &DynamicTDriver {t_only: true},
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+        // bench_setup(
+        //     "Sherlock_VC",
+        //     MAX_TCOUNT,
+        //     &SherlockDriver {
+        //         tries: vec![100, 0, 0],
+        //     },
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
     // bench_setup(
-    //     "DynamicT-t_only",
+    //     "Sherlock-100",
     //     MAX_TCOUNT,
-    //     &DynamicTDriver {t_only: true},
+    //     &SherlockDriver {tries: vec![1,100,0]},
     //     SimpFunc::FullSimp,
     //     testset,
     // );
-    // bench_setup(
-    //     "Sherlock-1",
-    //     20,
-    //     &SherlockDriver {tries: vec![1,0,0]},
-    //     SimpFunc::FullSimp,
-    //     testset,
-    // );
-    // bench_setup(
-    //     "Sherlock-10",
-    //     20,
-    //     &SherlockDriver {tries: vec![10,0,0]},
-    //     SimpFunc::FullSimp,
-    //     testset,
-    // );
-    // bench_setup(
-    //     "Sherlock-10",
-    //     20,
-    //     &SherlockDriver {
-    //         tries: vec![10, 0, 0],
-    //     },
-    //     SimpFunc::FullSimp,
-    //     testset,
-    // );
-    // bench_setup(
-    //     "Sherlock-withStuff",
-    //     20,
-    //     &SherlockDriver {tries: vec![100,100,100]},
-    //     SimpFunc::FullSimp,
-    //     testset,
-    // );
-    bench_setup(
-        "PyModelDrvier",
-        20,
-        &PyModelDriver::new("./saved_models/cut_model.pkl")
-            .expect("Failed to create PyModelDriver"),
-        SimpFunc::FullSimp,
-        testset,
-    );
+        // bench_setup(
+        //     "Random",
+        //     20,
+        //     &SherlockDriver {
+        //         tries: vec![1, 0, 0],
+        //     },
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+            // bench_setup(
+            //     "Random-M5",
+            //     30,
+            //     &SherlockDriver {
+            //         tries: vec![0, 1, 0],
+            //     },
+            //     SimpFunc::FullSimp,
+            //     testset,
+            // );
+            // bench_setup(
+            //     "Sherlock-M5",
+            //     30,
+            //     &SherlockDriver {tries: vec![0,100,0]},
+            //     SimpFunc::FullSimp,
+            //     testset,
+            // );
+        // bench_setup( 
+        //     "Cut-Model",
+        //     MAX_TCOUNT,
+        //     &PyModelDriver::new("./saved_models/model_cut_iter0.pkl")
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+        // bench_setup(
+        //     "Cut-Model-Iterated-v2",
+        //     MAX_TCOUNT,
+        //     &PyModelDriver::new("./saved_models/model_cut_iter1_v2.pkl")
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+            // bench_setup(
+            //     "M5-Model-Simple-Try",
+            //     MAX_TCOUNT,
+            //     &PyModelDriver::new("./saved_models/supervised_magic_simple_iter0_try.pkl")
+            //         .expect("Failed to create PyModelDriver"),
+            //     SimpFunc::FullSimp,
+            //     testset,
+            // );
+            bench_setup(
+                "M5-Model-Advanced-Try",
+                MAX_TCOUNT,
+                &PyModelDriver::new("./saved_models/supervised_magic_advanced_iter0_try.pkl")
+                    .expect("Failed to create PyModelDriver"),
+                SimpFunc::FullSimp,
+                testset,
+            );
 }
 
 // fn benchmark_simplifier(testset: &Vec<VecGraph>) {
@@ -384,10 +423,10 @@ pub fn bench() -> Result<(), CliError> {
 
     println!("Generating test set...");
     let testset = get_testset();
-    assert_eq!(
-        testset.len(),
-        (MAX_TCOUNT - MIN_TCOUNT) * SAMPLES_PER_TCOUNT
-    );
+    // assert_eq!(
+    //     testset.len(),
+    //     (MAX_TCOUNT - MIN_TCOUNT) * SAMPLES_PER_TCOUNT
+    // );
 
     // Run benchmarks
     benchmark_driver(&testset);
@@ -423,7 +462,7 @@ pub fn bench() -> Result<(), CliError> {
         .collect();
 
     // Create plots
-    create_svg_plot("alpha", alpha_files, "benches/results/nterms_plot.svg")
+    create_svg_plot("alpha_cliff_ccz", alpha_files, "benches/results/nterms_plot.svg")
         .expect("Failed to create nterms plot");
     create_svg_plot("times", times_files, "benches/results/runtime_plot.svg")
         .expect("Failed to create runtime plot");

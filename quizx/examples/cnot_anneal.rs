@@ -26,9 +26,9 @@ use std::{thread, time};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let f = "circuits/small/tof_10.qasm";
     let time = Instant::now();
-    println!("{}", f);
+    println!("{f}");
     let c = Circuit::from_file(f)
-        .unwrap_or_else(|_| panic!("circuit failed to parse: {}", f))
+        .unwrap_or_else(|_| panic!("circuit failed to parse: {f}"))
         .to_basic_gates();
     println!("...done reading in {:.2?}", time.elapsed());
 
@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("After: {}", _c1.stats());
         }
         Err(ExtractError(msg, _c, _g)) => {
-            println!("extract failed: {}", msg);
+            println!("extract failed: {msg}");
             // println!("\n\n{}", _g.to_dot());
         }
     }

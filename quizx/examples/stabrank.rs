@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut d = Decomposer::new(&g);
     d.with_full_simp();
     let max = d.max_terms();
-    println!("Naive: {} terms", max);
+    println!("Naive: {max} terms");
 
     // let mut rng = StdRng::seed_from_u64(1337);
 
