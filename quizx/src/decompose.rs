@@ -23,6 +23,7 @@ use std::fmt::Display;
 use crate::scalar::*;
 // use crate::graph;
 use crate::graph::*;
+use crate::vec_graph;
 use derive_more::derive::Display;
 use itertools::Itertools;
 // use rand::seq::SliceRandom;
@@ -407,6 +408,88 @@ pub struct SherlockDriver {
 impl std::fmt::Display for SherlockDriver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Sherlock(tries={:?})", self.tries)
+    }
+}
+
+#[derive(Debug)]
+pub struct SherlockWatsonDriver {
+    pub tries: Vec<usize>,
+    watson: PyObject
+}
+
+
+impl Clone for SherlockWatsonDriver {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self {
+            watson: self.watson.clone_ref(py),
+            tries: self.tries.clone()
+        })
+    }
+}
+
+
+impl SherlockWatsonDriver {
+    /// Creates a new driver by loading a PyTorch model from the specified path.
+    pub fn new(model_path: &str, tries: Vec<usize>) -> PyResult<Self> {
+        // Get the Python interpreter and GIL.
+        Python::with_gil(|py| {
+            // Add the current directory to Python's path to find our helper module.
+            let sys = py.import("sys")?;
+            let path_obj = sys.getattr("path").expect("Error with path");
+            let path: &Bound<PyList> = path_obj.downcast()?;
+            path.insert(0, ".")?;
+
+            // Import our Python helper module.
+            let helper = PyModule::import(py, "model_driver_helper")?;
+
+            // Call the 'load_model' function from our helper.
+            let watson = helper.getattr("load_model")?.call1((model_path,))?;
+
+            Ok(SherlockWatsonDriver {
+                watson: watson.into(),
+                tries: tries
+            })
+        })
+    }
+
+
+    fn estimate(&self, g: &crate::vec_graph::Graph, candidate: &Decomp) -> f64 {
+        let verts = match candidate {
+            SingleDecomp(vertices) => {
+                vertices
+            }
+            _ => {
+                panic!("This decomp is not yet supported")
+            }
+        };
+        
+        let py_graph_wrapper = py_graph_wrapper::PyVecGraph { g: g.clone() };
+        Python::with_gil(|py| {
+            // Import the helper module again.
+            let helper = PyModule::import(py, "model_driver_helper")
+                .expect("Failed to import model_driver_helper.py");
+
+            // Get a Python reference to our model object.
+            let model_py = self.watson.bind(py);
+
+            // Call the 'run_model_on_graph' function.
+            let result_estimate = helper
+                .getattr("run_estimator_model_on_graph")
+                .expect("Could not find 'run_estimator_model_on_graph' function")
+                .call1((model_py, py_graph_wrapper, verts))
+                .expect("Python function call failed");
+
+            // Extract the results from the Python tuple (string, list)
+            result_estimate
+                .extract()
+                .expect("Failed to extract result from Python")
+        })
+    }
+}
+
+impl std::fmt::Display for SherlockWatsonDriver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Sherlock-Warson(tries={:?})", self.tries)
     }
 }
 
@@ -795,6 +878,78 @@ impl Driver for SherlockDriver {
         match all_candidates
             .into_iter()
             .map(|candidate| (eff_alpha(g, &candidate), candidate))
+            // .inspect(|decomp| println!("{:?}", decomp))
+            .min_by(|(val1, _), (val2, _)| val1.partial_cmp(val2).unwrap())
+        {
+            None => Decomp::SingleDecomp(first_ts(g)),
+            Some((_, decomp)) => {
+                // println!("{}", decomp);
+                decomp
+            }
+        }
+    }
+}
+
+
+impl Driver for SherlockWatsonDriver {
+    fn choose_decomp(&self, g: &impl GraphLike) -> Decomp {
+        let mut vec_g = crate::vec_graph::Graph::new();
+        vec_g.append_graph(g);
+
+        use rand::seq::SliceRandom;
+        let mut rng = thread_rng();
+        let t_vertices: Vec<usize> = g.vertices().filter(|vert| g.phase(*vert).is_t()).collect();
+
+        // println!("{:?}", t_vertices);
+        let mut indices: Vec<usize> = t_vertices.clone();
+        indices.shuffle(&mut rng);
+        let mut single_candidates: Vec<_> = indices
+            .into_iter()
+            .take(self.tries[0])
+            .map(|vert| SingleDecomp(vec![vert]))
+            .collect();
+
+        let mut magic_candidates = if t_vertices.len() < 5 {
+            vec![]
+        } else {
+            (0..self.tries[1])
+                .map(|_| Magic5FromCat(t_vertices.choose_multiple(&mut rng, 5).cloned().collect()))
+                .collect()
+        };
+
+        let mut cat_candidates = g
+            .vertices()
+            .filter_map(|vert| {
+                if g.vertex_type(vert) == VType::Z && g.phase(vert).is_pauli() {
+                    let mut neighs = g.neighbor_vec(vert);
+                    if neighs.len() <= 6
+                        && neighs.len() >= 3
+                        && neighs.iter().all(|&n| {
+                            g.vertex_type(n) == VType::Z
+                                && g.phase(n).is_t()
+                                && g.edge_type(vert, n) == EType::H
+                        })
+                    {
+                        let mut res = vec![vert];
+                        res.append(&mut neighs);
+                        Some(CatDecomp(res))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .take(self.tries[2])
+            .collect();
+
+        let mut all_candidates = vec![];
+        all_candidates.append(&mut single_candidates);
+        all_candidates.append(&mut magic_candidates);
+        all_candidates.append(&mut cat_candidates);
+        match all_candidates
+            .into_iter()
+            .map(|candidate| (self.estimate(&vec_g, &candidate), candidate))
             // .inspect(|decomp| println!("{:?}", decomp))
             .min_by(|(val1, _), (val2, _)| val1.partial_cmp(val2).unwrap())
         {
@@ -1213,7 +1368,7 @@ pub fn apply_magic5_from_cat_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> 
 }
 
 /// Perform a decomposition of cat states
-fn apply_cat_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> {
+pub fn apply_cat_decomp<G: GraphLike>(g: &G, verts: &[V]) -> Vec<G> {
     // println!("{:?}", verts);
     // verts[0] is a 0- or pi-spider, linked to all and only to vs in verts[1..] which are T-spiders
     let mut g = g.clone(); // that is annoying ...

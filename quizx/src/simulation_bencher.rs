@@ -5,8 +5,7 @@ use std::time::Instant;
 
 use crate::cli::CliError;
 use crate::decompose::{
-    Decomposer, Driver,
-    SherlockDriver, SimpFunc, DynamicTDriver, PyModelDriver
+    Decomposer, Driver, DynamicTDriver, PyModelDriver, SherlockDriver, SherlockWatsonDriver, SimpFunc
 };
 use crate::generate;
 use crate::graph::{BasisElem, GraphLike};
@@ -21,7 +20,7 @@ use std::collections::HashMap;
 const SEED: u64 = 42;
 const MIN_TCOUNT: usize = 6;
 const MAX_TCOUNT: usize = 30;
-const SAMPLES_PER_TCOUNT: usize = 4;
+const SAMPLES_PER_TCOUNT: usize = 10;
 
 fn get_testset() -> Vec<VecGraph> {
     let mut graph_bins: [Vec<VecGraph>; MAX_TCOUNT - MIN_TCOUNT] =
@@ -34,7 +33,7 @@ fn get_testset() -> Vec<VecGraph> {
     // circuit_builder.p_ccz(0.05).p_t(0.05).with_cliffords();
     circuit_builder.seed(SEED).qubits(15);
     while count_full < (MAX_TCOUNT - MIN_TCOUNT) {
-        for i in 6..MAX_TCOUNT {
+        for i in 6..50 {
             circuit_builder.depth(i);
             let mut graph: VecGraph = circuit_builder.build().to_graph();
             graph.plug_inputs(&vec![BasisElem::X0; 15]);
@@ -94,13 +93,14 @@ fn bench_setup(
                 .decompose(driver);
             let elapsed = start.elapsed();
 
-            if elapsed.as_secs() > 60 {
-                return;
-            }
-
             // Save both nterms and runtime
             writeln!(file_nterms, "{},{}", t_count, decomposer.nterms).unwrap();
             writeln!(file_times, "{},{}", t_count, elapsed.as_nanos()).unwrap();
+
+            if elapsed.as_secs() > 120 {
+                return;
+            }
+
         }
     }
 }
@@ -305,37 +305,40 @@ fn create_svg_plot(
 
 fn benchmark_driver(testset: &[VecGraph]) {
     println!("Running Driver benchmarks...");
-
-    // bench_setup(
-    //     "BssTOnly",
-    //         MAX_TCOUNT,
-    //     &BssTOnlyDriver { random_t: false },
-    //     SimpFunc::FullSimp,
-    //     testset,
-    // );
-    //  bench_setup(
-    //     "BssWithCats",
-    //     20,
-    //     &BssWithCatsDriver { random_t: false },
-    //     SimpFunc::FullSimp,
-    //     testset,
-    // );
-    // bench_setup(
-    //     "DynamicT-wihtStuff",
-    //     MAX_TCOUNT,
-    //     &DynamicTDriver {t_only: false},
-    //     SimpFunc::FullSimp,
-    //     testset,
-    // );
         // bench_setup(
-        //     "DynamicT_VC_only",
+        //     "Sherlock-Watson",
+        //     MAX_TCOUNT,
+        //     &SherlockWatsonDriver::new("./saved_models/vc_estimator_exp_pauli_hcucvmev.pkl", vec![100,0,0])
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+    
+        // bench_setup(
+        //     "DynamicT-VC_only",
         //     MAX_TCOUNT,
         //     &DynamicTDriver {t_only: true},
         //     SimpFunc::FullSimp,
         //     testset,
         // );
+        bench_setup(
+            "DynamicT-Full",
+            MAX_TCOUNT,
+            &DynamicTDriver {t_only: false},
+            SimpFunc::FullSimp,
+            testset,
+        );
+        bench_setup(
+            "Sherlock-Full",
+            MAX_TCOUNT,
+            &SherlockDriver {
+                tries: vec![100, 100, 100],
+            },
+            SimpFunc::FullSimp,
+            testset,
+        );
         // bench_setup(
-        //     "Sherlock_VC",
+        //     "Sherlock-VC",
         //     MAX_TCOUNT,
         //     &SherlockDriver {
         //         tries: vec![100, 0, 0],
@@ -343,70 +346,96 @@ fn benchmark_driver(testset: &[VecGraph]) {
         //     SimpFunc::FullSimp,
         //     testset,
         // );
-    // bench_setup(
-    //     "Sherlock-100",
-    //     MAX_TCOUNT,
-    //     &SherlockDriver {tries: vec![1,100,0]},
-    //     SimpFunc::FullSimp,
-    //     testset,
-    // );
         // bench_setup(
-        //     "Random",
-        //     20,
+        //     "Random-VC",
+        //     MAX_TCOUNT,
         //     &SherlockDriver {
         //         tries: vec![1, 0, 0],
         //     },
         //     SimpFunc::FullSimp,
         //     testset,
         // );
-            // bench_setup(
-            //     "Random-M5",
-            //     30,
-            //     &SherlockDriver {
-            //         tries: vec![0, 1, 0],
-            //     },
-            //     SimpFunc::FullSimp,
-            //     testset,
-            // );
-            // bench_setup(
-            //     "Sherlock-M5",
-            //     30,
-            //     &SherlockDriver {tries: vec![0,100,0]},
-            //     SimpFunc::FullSimp,
-            //     testset,
-            // );
+        //     bench_setup(
+        //         "Random-M5",
+        //         MAX_TCOUNT,
+        //         &SherlockDriver {
+        //             tries: vec![0, 1, 0],
+        //         },
+        //         SimpFunc::FullSimp,
+        //         testset,
+        //     );
+        //     bench_setup(
+        //         "Sherlock-M5",
+        //         MAX_TCOUNT,
+        //         &SherlockDriver {tries: vec![0,100,0]},
+        //         SimpFunc::FullSimp,
+        //         testset,
+        //     );
+
         // bench_setup( 
-        //     "Cut-Model",
+        //     "Model-VC-Exp_Pauli-KL",
         //     MAX_TCOUNT,
-        //     &PyModelDriver::new("./saved_models/model_cut_iter0.pkl")
+        //     &PyModelDriver::new("./saved_models/model_vc_exp_pauli_iter0.pkl")
         //         .expect("Failed to create PyModelDriver"),
         //     SimpFunc::FullSimp,
         //     testset,
         // );
-        // bench_setup(
-        //     "Cut-Model-Iterated-v2",
+        // bench_setup( 
+        //     "Model-VC-Exp_Pauli-KL-Iter2",
         //     MAX_TCOUNT,
-        //     &PyModelDriver::new("./saved_models/model_cut_iter1_v2.pkl")
+        //     &PyModelDriver::new("./saved_models/model_vc_exp_pauli_iter1.pkl")
         //         .expect("Failed to create PyModelDriver"),
         //     SimpFunc::FullSimp,
         //     testset,
         // );
-            // bench_setup(
-            //     "M5-Model-Simple-Try",
-            //     MAX_TCOUNT,
-            //     &PyModelDriver::new("./saved_models/supervised_magic_simple_iter0_try.pkl")
-            //         .expect("Failed to create PyModelDriver"),
-            //     SimpFunc::FullSimp,
-            //     testset,
-            // );
-            bench_setup(
-                "M5-Model-Advanced-Try",
-                MAX_TCOUNT,
-                &PyModelDriver::new("./saved_models/supervised_magic_advanced_iter0_try.pkl")
-                    .expect("Failed to create PyModelDriver"),
-                SimpFunc::FullSimp,
-                testset,
-            );
+        // bench_setup( 
+        //     "Model-VC-Exp_Pauli-KL-Iter3",
+        //     MAX_TCOUNT,
+        //     &PyModelDriver::new("./saved_models/model_vc_exp_pauli_iter2.pkl")
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+        // bench_setup( 
+        //     "Model-VC-Exp_Pauli-EEA",
+        //     MAX_TCOUNT,
+        //     &PyModelDriver::new("./saved_models/model_vc_pauli_eea_suxuj4tv.pkl")
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+        // bench_setup( 
+        //     "Model-VC-CliffCCZ-KL",
+        //     MAX_TCOUNT,
+        //     &PyModelDriver::new("./saved_models/model_vc_cliffccz_kl_5vgz73sm.pkl")
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+        // bench_setup( 
+        //     "Model-VC-CliffCCZ-EEA",
+        //     MAX_TCOUNT,
+        //     &PyModelDriver::new("./saved_models/model_vc_cliffccz_eea_cvwc5w4k.pkl")
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+        // bench_setup( 
+        //     "Model-M5-Exp_Pauli-Simple",
+        //     MAX_TCOUNT,
+        //     &PyModelDriver::new("./saved_models/supervised_magic_exp_pauli_simple_iter0.pkl")
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
+        // bench_setup( 
+        //     "Model-M5-Exp_Pauli-Advanced",
+        //     MAX_TCOUNT,
+        //     &PyModelDriver::new("./saved_models/supervised_magic_exp_pauli_advanced_iter0.pkl")
+        //         .expect("Failed to create PyModelDriver"),
+        //     SimpFunc::FullSimp,
+        //     testset,
+        // );
 }
 
 // fn benchmark_simplifier(testset: &Vec<VecGraph>) {

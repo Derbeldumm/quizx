@@ -196,3 +196,26 @@ def run_model_on_graph(model, rust_graph) -> Tuple[str, List[int]]:
 
     return (decomp_name, vertices)
     # return ("CUT", [0])
+
+
+def run_estimator_model_on_graph(model, rust_graph, selection) -> Tuple[str, List[int]]:
+    """
+    Converts a quizx graph from Rust, runs the model, and returns the chosen decomposition.
+    """
+    # 1. Convert the graph from quizx format to pyg format
+    pyg_data = quizx_to_pyg(rust_graph)
+
+    #2. Add the selection feature
+    pyg_data.selection = torch.zeros(pyg_data.x.shape[0])
+    for vertex in selection:
+        pyg_data.selection[vertex] = 1
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    pyg_data.to(device)
+
+    # 3. Run the model's ranking pass
+    with torch.no_grad():
+        result = model.rank(pyg_data)
+
+    return result.item()
+    # return ("CUT", [0])
