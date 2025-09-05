@@ -614,6 +614,161 @@ impl Driver for PyModelDriver {
     }
 }
 
+#[derive(Debug)]
+pub struct AbraDriver {
+    vc_selector: PyObject,
+    m5_selector: PyObject,
+    vc_ranker: PyObject,
+    m5_ranker: PyObject,
+}
+
+impl std::fmt::Display for AbraDriver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AbraDriver")
+    }
+}
+
+impl AbraDriver {
+    /// Creates a new driver by loading a PyTorch model from the specified path.
+    pub fn new(vc_selector_path: &str, m5_selector_path: &str, vc_ranker_path: &str, m5_ranker_path: &str) -> PyResult<Self> {
+        // Get the Python interpreter and GIL.
+        Python::with_gil(|py| {
+            // Add the current directory to Python's path to find our helper module.
+            let sys = py.import("sys")?;
+            let path_obj = sys.getattr("path").expect("Error with path");
+            let path: &Bound<PyList> = path_obj.downcast()?;
+            path.insert(0, ".")?;
+
+            // Import our Python helper module.
+            let helper = PyModule::import(py, "model_driver_helper")?;
+
+            // Call the 'load_model' function from our helper.
+            let vc_selector = helper.getattr("load_model")?.call1((vc_selector_path,))?;
+            let m5_selector = helper.getattr("load_model")?.call1((m5_selector_path,))?;
+            let vc_ranker = helper.getattr("load_model")?.call1((vc_ranker_path,))?;
+            let m5_ranker = helper.getattr("load_model")?.call1((m5_ranker_path,))?;
+
+            Ok(AbraDriver {
+                vc_selector: vc_selector.into(),
+                m5_selector: m5_selector.into(),
+                vc_ranker: vc_ranker.into(),
+                m5_ranker: m5_ranker.into(),
+            })
+        })
+    }
+}
+
+impl Clone for AbraDriver {
+    fn clone(&self) -> Self {
+        Python::with_gil(|py| Self {
+            vc_selector: self.vc_selector.clone_ref(py),
+            m5_selector: self.m5_selector.clone_ref(py),
+            vc_ranker: self.vc_ranker.clone_ref(py),
+            m5_ranker: self.m5_ranker.clone_ref(py),
+        })
+    }
+}
+
+impl Driver for AbraDriver {
+    fn choose_decomp(&self, g: &impl GraphLike) -> Decomp {
+        let mut vec_g = crate::vec_graph::Graph::new();
+        vec_g.append_graph(g);
+        // println!("{}", g.to_dot());
+        // println!("{}", vec_g.to_dot());
+
+        let ts = first_ts(&vec_g);
+
+        let py_graph_wrapper = py_graph_wrapper::PyVecGraph { g: vec_g };
+        let result = Python::with_gil(|py| {
+            // Import the helper module again.
+            let helper = PyModule::import(py, "model_driver_helper")
+                .expect("Failed to import model_driver_helper.py");
+
+            // Get a Python reference to our model object.
+            let vc_selector_py = self.vc_selector.bind(py);
+            let m5_selector_py = self.m5_selector.bind(py);
+            let vc_ranker_py = self.vc_ranker.bind(py);
+            let m5_ranker_py = self.m5_ranker.bind(py);
+
+            // Call the 'run_model_on_graph' function.
+            let vc_selection: (String, Vec<usize>) = helper
+                .getattr("run_model_on_graph")
+                .expect("Could not find 'run_model_on_graph' function")
+                .call1((vc_selector_py, py_graph_wrapper.clone()))
+                .expect("Python function call failed")
+                .extract()
+                .expect("Failed to extract result from Python");
+            
+            
+            if ts.len() >= 5 {
+                let vc_rank: f64 = helper
+                    .getattr("run_estimator_model_on_graph")
+                    .expect("Could not find 'run_estimator_model_on_graph' function")
+                    .call1((vc_ranker_py, py_graph_wrapper.clone(), vc_selection.1.clone()))
+                    .expect("Python function call failed")
+                    .extract()
+                    .expect("Failed to extract result from Python");
+                
+                let m5_selection: (String, Vec<usize>) = helper
+                    .getattr("run_model_on_graph")
+                    .expect("Could not find 'run_model_on_graph' function")
+                    .call1((m5_selector_py, py_graph_wrapper.clone()))
+                    .expect("Python function call failed")
+                    .extract()
+                    .expect("Failed to extract result from Python");
+            
+                let m5_rank: f64 = helper
+                    .getattr("run_estimator_model_on_graph")
+                    .expect("Could not find 'run_estimator_model_on_graph' function")
+                    .call1((m5_ranker_py, py_graph_wrapper.clone(), m5_selection.1.clone()))
+                    .expect("Python function call failed")
+                    .extract()
+                    .expect("Failed to extract result from Python");
+                if m5_rank < vc_rank {
+                    ("MAGIC5", m5_selection.1)
+                }
+                else{
+                    ("CUT", vc_selection.1)
+                }
+            }
+            else {
+                ("CUT", vc_selection.1)
+            }
+        });
+
+        let (decomp_name, mut vertices) = result;
+        let g_vertices: Vec<_> = g.vertices().collect();
+        vertices = vertices.into_iter().map(|v| g_vertices[v]).collect();
+        // Map the string result back to your Rust Decomp enum.
+        match decomp_name {
+            "CUT" => {
+                if vertices.is_empty() {
+                    // Fallback if the model returns no vertices
+                    println!("Warning: PyModelDriver returned CUT with no vertices. Falling back.");
+                    // Choose a default decomposition, e.g., the first T gate.
+                    let ts = first_ts(g);
+                    if ts.is_empty() {
+                        panic!("No T-gates found for fallback decomposition.");
+                    }
+                    Decomp::SingleDecomp(ts)
+                } else {
+                    // Use the vertex provided by the model.
+                    Decomp::SingleDecomp(vertices)
+                }
+            }
+            // Add other cases if your model can return other decomposition types
+            // "CAT" => Decomp::CatDecomp(vertices),
+            "MAGIC5" => Decomp::Magic5FromCat(vertices),
+            _ => {
+                panic!(
+                    "Unsupported decomposition type from Python model: {decomp_name}"
+                );
+            }
+        }
+    }
+}
+
+
 impl Driver for BssWithCatsDriver {
     fn choose_decomp(&self, g: &impl GraphLike) -> Decomp {
         let cat_nodes = cat_ts(g);
@@ -809,7 +964,7 @@ impl Driver for DynamicTDriver {
             (TPairDecomp(vs_pair), alpha_pair)
         };
 
-        if cat_alpha < heur_alpha && !self.t_only {
+        if false && cat_alpha < heur_alpha && !self.t_only {
             CatDecomp(cat_nodes)
         } else if heur_alpha < 0.396 || self.t_only {
             // println!("Decomp: {:?}, Alpha: {}", heur_decomp, heur_alpha);

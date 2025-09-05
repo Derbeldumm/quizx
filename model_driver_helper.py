@@ -159,7 +159,7 @@ def load_model(model_path: str):
         model = torch.load(model_path, weights_only=False)
     except Exception as err:
         print("Error when loading model", err)
-    print("Loading suceess!")
+    print(f"Loading suceess!, Type: {type(model)}")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
     model.eval()  # Set the model to evaluation mode
